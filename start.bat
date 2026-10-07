@@ -5,10 +5,11 @@ echo   [44m[97m        Leanna         [0m
 echo   [90mInitializing System...[0m
 echo.
 
-:: Verifier que Node.js est installe
-where node >nul 2>nul
-if %errorlevel% neq 0 (
-    echo   [91m[ERROR][0m Node.js not found. Please install it to continue.
+:: Verifier que Node.js est installe et a la bonne version (>= 20)
+for /f "tokens=1 delims=." %%i in ('node -v') do set node_version=%%i
+set node_version=%node_version:~1%
+if %node_version% LSS 20 (
+    echo   [91m[ERROR][0m Node.js version 20 or higher is required.
     echo   [90mhttps://nodejs.org/[0m
     echo.
     pause

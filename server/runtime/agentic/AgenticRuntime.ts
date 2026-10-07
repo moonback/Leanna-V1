@@ -38,6 +38,7 @@ import {
   buildBudgetSection,
   buildObservationHistory,
 } from "./ToolPromptBuilder.js";
+import { buildPhaseGuidance } from "../../agents/phasePrompts.js";
 import {
   DEFAULT_AGENT_BUDGET,
   emptyBudgetUsage,
@@ -773,12 +774,17 @@ export class AgenticRuntime implements IAgentRuntime {
   // ─── Helpers internes ───────────────────────────────────────────────────────
 
   private buildSystemPrompt(agent: AgentDefinition, tools: ToolDeclaration[], session: RunSession): string {
+    // Guidage contextuel par phase (plan/act/verify/recover) : recentre l'agent
+    // sur l'intention de la phase COURANTE au lieu de rappeler tout le contrat
+    // à chaque tour. Vide si la phase n'est pas outillée → comportement inchangé.
+    const phaseGuidance = buildPhaseGuidance(session.phase);
     return [
       agent.systemPrompt,
       "",
       buildToolSection(tools),
       "",
       buildBudgetSection(session.budget, session.usage, session.phase),
+      ...(phaseGuidance ? ["", phaseGuidance] : []),
     ].join("\n");
   }
 

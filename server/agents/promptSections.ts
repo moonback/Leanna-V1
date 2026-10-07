@@ -340,6 +340,23 @@ export function buildOptimizedAgentPrompt(
   parts.push(`\n## Résumé\n[Synthèse de ce qui a été produit / modifié]`);
   parts.push(`\n## Détails\n[Détails techniques des modifications ou du contenu généré]`);
   parts.push(`\n## Recommandations\n[Améliorations, vérifications ou prochaines étapes]`);
-  
+
+  // Contrat de sortie STRUCTURÉ (déterministe) — doit être la toute dernière
+  // ligne du rapport. C'est ce marqueur, et non une tournure de phrase, qui
+  // décide de l'outcome côté runtime : il supprime l'ambiguïté d'une détection
+  // d'échec par heuristique textuelle. Toujours le renseigner honnêtement.
+  parts.push(
+    `\n## Statut\n` +
+    `Terminer le rapport par EXACTEMENT une ligne de statut machine, au format :\n` +
+    `<!-- leanna:outcome=VALEUR reason=... -->\n` +
+    `où VALEUR ∈ { success, partial, blocked, no_change, failed } :\n` +
+    `- success  : objectif atteint et vérifié ;\n` +
+    `- partial  : partiellement atteint (préciser reason) ;\n` +
+    `- blocked  : impossible à cause d'un problème externe/préexistant (préciser reason) ;\n` +
+    `- no_change : aucune modification nécessaire ou possible (préciser reason) ;\n` +
+    `- failed   : échec (préciser reason).\n` +
+    `Exemple : <!-- leanna:outcome=blocked reason=dépendance manquante lodash -->`
+  );
+
   return parts.join('\n');
 }

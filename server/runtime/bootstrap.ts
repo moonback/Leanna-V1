@@ -178,6 +178,25 @@ export async function bootstrapRuntime(config: BootstrapConfig = {}): Promise<Bo
     console.error("[Bootstrap] Audit d'attribution échec:", err);
   }
 
+  // 6d. Garde fail-fast des capabilities fantômes. Un agent peut déclarer dans
+  // ses capabilities (roles.ts) un outil non exécutable (absent de
+  // EXECUTABLE_AGENT_TOOLS) ou jamais enregistré dans le ToolRegistry : à
+  // l'exécution, l'exécuteur refuse l'appel et l'agent re-tente en vain
+  // (boucle de retry stérile qui mange le budget de contexte). On détecte ce
+  // désalignement AU BOOT — avertissement actionnable par défaut, erreur de
+  // boot en mode "strict" (Leanna_CAPABILITY_ENFORCEMENT=strict) — au lieu
+  // d'attendre le premier appel en pleine mission.
+  try {
+    const { enforceCapabilities, capabilityEnforcementFromEnv } = await import(
+      "../agents/capabilityAudit.js"
+    );
+    enforceCapabilities(runtime, capabilityEnforcementFromEnv());
+  } catch (err) {
+    // En mode strict, PhantomCapabilityError doit remonter : on ne l'avale pas.
+    if ((err as Error)?.name === "PhantomCapabilityError") throw err;
+    console.error("[Bootstrap] Audit des capabilities échec:", err);
+  }
+
   // 7. Callback post-init
   if (config.onReady) {
     await config.onReady(runtime, skillManager);

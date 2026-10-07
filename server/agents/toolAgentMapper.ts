@@ -195,6 +195,17 @@ const SENSITIVE_TOOL_ATTRIBUTION: Record<
   delete_custom_skill: { preferred: 'coder', allowed: ['coder'], risk: 'dangerous' },
   // Exécution de workflow complet — chaîne d'actions avec effets de bord.
   workflow_run: { preferred: 'planner', allowed: ['planner', 'coder'], risk: 'exec' },
+  // Diagnostic — consultation des journaux structurés agents/assistant. Lecture
+  // seule : aucun risque, mais attribution explicite car aucune catégorie ne le
+  // matche (retombait sur le rôle neutre "system"). Diagnostic = debugger.
+  assistant_logs: { preferred: 'debugger', allowed: ['debugger', 'reviewer'] },
+  // Génération du document de structure projet (codebase.md). Écrit un fichier :
+  // risque "write". Outil de documentation d'architecture → architect/writer.
+  generate_codebase_markdown: {
+    preferred: 'architect',
+    allowed: ['architect', 'writer', 'documentation'],
+    risk: 'write',
+  },
 };
 
 /**
