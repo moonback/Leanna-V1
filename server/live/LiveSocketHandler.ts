@@ -714,6 +714,38 @@ export function attachLiveWebSocket(
         }
       }
 
+      // ── Inspecteur de prompt (debug) ─────────────────────────────────
+      // On émet vers le client le payload EXACT injecté dans la session
+      // Gemini Live (systemInstruction) décomposé en ses blocs constitutifs,
+      // afin que l'UI (PromptInspectorPanel) puisse afficher le prompt système
+      // et tout le contexte réellement envoyés au modèle. Best-effort : jamais
+      // bloquant pour l'établissement de la session.
+      try {
+        const combinedForDebug = systemText + memoryContext + knowledgeContext + notebookContext;
+        clientWs.send(JSON.stringify({
+          type: 'prompt_debug',
+          mode: sessionMode,
+          workspace: getWorkspaceRoot(),
+          systemText,
+          memoryContext,
+          knowledgeContext,
+          notebookContext,
+          combined: combinedForDebug,
+          stats: {
+            systemChars: systemText.length,
+            memoryChars: memoryContext.length,
+            knowledgeChars: knowledgeContext.length,
+            notebookChars: notebookContext.length,
+            combinedChars: combinedForDebug.length,
+            combinedTokensEst: Math.ceil(combinedForDebug.length / 4),
+          },
+          tools: (filteredDeclarations ?? []).map((d: any) => d.name).filter(Boolean),
+          generatedAt: new Date().toISOString(),
+        }));
+      } catch (e) {
+        console.warn('[LiveSocket] Émission prompt_debug échouée (non bloquant):', (e as Error).message);
+      }
+
       // ── GoAway handler ───────────────────────────────────────────────
       let goAwayHandled = false;
       let clientWsClosing = false;

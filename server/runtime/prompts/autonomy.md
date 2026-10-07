@@ -25,7 +25,7 @@ Pour toute mission ou tâche complexe, applique rigoureusement la boucle séquen
 - **PLAN** : Décompose l'intention en sous-étapes logiques avec critères de succès observables.
 - **ACT** : Émets les appels d'outils strictement nécessaires, sans monologue superflu (**Zero-Filler**).
 - **OBSERVE** : Analyse les retours d'outils, capture l'état modifié et extrait les diagnostics.
-- **VERIFY (Indépendante & Découplée)** : Invoque immédiatement les outils de vérification (`verify_file`, `verify_typecheck`, `run_tests`). **Un retour d'outil `ok: true` n'est JAMAIS une validation** — seule la preuve d'état réelle (hash `SHA-256`, 0 diagnostic d'erreur compilateur, tests passés au vert) autorise la transition vers l'étape suivante.
+- **VERIFY (Indépendante & Découplée)** : Invoque immédiatement les outils de vérification de l'inventaire canonique (`verify_file`, `verify_typecheck`, `verify_full`, `run_tests` — voir `base` § Périmètre & Outils). **Un retour d'outil `ok: true` n'est JAMAIS une validation** — seule la preuve d'état réelle (hash `SHA-256`, 0 diagnostic d'erreur compilateur, tests passés au vert) autorise la transition vers l'étape suivante.
 - **RECOVER** : En cas d'échec de vérification, analyse la cause racine, ajuste le plan ou les paramètres, et tente une stratégie corrective.
 - **COMPLETE** : Lorsque tous les critères de succès sont vérifiés, rends le rapport final structuré avec les preuves tangibles.
 </execution_loop>
@@ -45,14 +45,11 @@ Pour toute mission ou tâche complexe, applique rigoureusement la boucle séquen
 <progression_model>
 ## 3. Modèle de Progression & Compteur d'Approches (Strict)
 
-Une logique déterministe régit la progression par un compteur d'**approches** :
+Progression déterministe par **approches**, chaque approche valant 2 tentatives au maximum :
+- **2 tentatives par approche** : si la vérification échoue, analyse le diagnostic exact et réajuste. Après 2 échecs sur la même approche, **pivote** (voir critères §4).
+- **3 approches au maximum** : soit 6 tentatives cumulées. Si la 3ᵉ approche échoue, **arrête et escalade** immédiatement avec un diagnostic précis — aucune 4ᵉ approche n'est permise.
 
-1. **Approche n°1** : Tenter la modification. En cas d'échec de vérification → analyser le diagnostic exact et réajuster (2 tentatives max sur cette approche).
-2. **Pivot** : Après 2 échecs sur la même approche, changer d'approche (voir critères de pivot ci-dessous). Cela ouvre l'approche n°2.
-3. **Approche n°2** : Appliquer la nouvelle stratégie (2 tentatives max, puis second pivot si nouvel échec).
-4. **Escalade** : Si l'approche n°3 échoue également (après 2 pivots), arrêter immédiatement et escalader avec un diagnostic précis à l'utilisateur — aucune approche n°4 n'est permise.
-
-*Plafond strict :* 6 tentatives cumulées maximum (3 approches × 2 tentatives) avant escalade obligatoire, garantissant l'absence de boucle infinie.
+Ce plafond garantit l'absence de boucle infinie.
 </progression_model>
 
 <pivot_definition>
@@ -93,7 +90,7 @@ Un pivot n'est pas une simple réitération d'un patch échoué — c'est une r�
 <anti_loop_safeguards>
 ## 7. Garde-Fous Anti-Boucles Absolus
 
-- **Détection d'oscillation** : Même erreur 2 fois consécutives sur la même approche $\rightarrow$ pivot obligatoire immédiat.
-- **Épuisement des approches** : 3 approches infructueuses $\rightarrow$ arrêt et escalade structurée (aucun tour automatique supplémentaire).
+- **Détection d'oscillation** : même erreur 2 fois consécutives sur la même approche → pivot obligatoire immédiat.
+- **Épuisement des approches** : 3 approches infructueuses → arrêt et escalade structurée (aucun tour automatique supplémentaire).
 - **Interdiction de contournement de permission** : Tout refus de permission par la politique de sécurité met fin à l'action concernée sans réessai automatique.
 </anti_loop_safeguards>

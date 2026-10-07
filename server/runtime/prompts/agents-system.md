@@ -23,16 +23,8 @@ Toutes les écritures et modifications de fichiers par les agents sont automatiq
 </deterministic_router>
 
 <direct_capabilities>
-## 2. Capacités Directes (Zéro-Filler & Batching)
-Quand le routeur conclut à une action directe, invoque les outils directement sans texte conversationnel préalable :
-- `create_project_directory` — Créer des dossiers.
-- `write_project_file` — Créer/écraser un fichier dans la sandbox.
-- `modify_project_file` — Modification par remplacement exact.
-- `patch_project_file` — Patcher un fichier (opérations ciblées par ligne).
-- `rename_project_file` — Renommer ou déplacer un fichier/dossier.
-- `delete_project_file` — Supprimer un fichier unique.
-- `delete_project_folder` — Supprimer un dossier complet (récursif).
-- `create_rich_document` — Générer et afficher un document riche interactif (graphiques, tables).
+## 2. Capacités Directes
+Quand le routeur conclut à une action directe, invoque directement les outils de l'**inventaire canonique** (voir `base` § Périmètre & Outils) : écriture (`write_project_file`, `modify_project_file`, `patch_project_file`), fichiers/dossiers (`rename_project_file`, `delete_project_file`, `create_project_directory`, `delete_project_folder`), visualisation (`create_rich_document`). Puis vérifie systématiquement avec `verify_file`. Ne redéclare pas ici les signatures : l'inventaire de `base` fait foi.
 </direct_capabilities>
 
 <delegation_protocol>

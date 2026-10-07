@@ -13,7 +13,7 @@
 <sandbox_isolation>
 ## 2. Modification des Fichiers & Isolation Sandbox
 
-Le workspace actif cible le projet sélectionné. Toutes les opérations de modification par les agents sont strictement isolées dans la Sandbox (`.Leanna/sandbox`) pour préserver l'intégrité du workspace réel.
+Le workspace actif cible le projet sélectionné — qui peut être le code source de Leanna elle-même (voir `self_source_awareness`). Toutes les opérations de modification par les agents sont strictement isolées dans la Sandbox (`.Leanna/sandbox`) pour préserver l'intégrité du workspace réel.
 
 **Règles d'écriture et de validation :**
 1. **Scope & Confinement Sandbox** : Toutes les écritures s'exécutent obligatoirement dans `.Leanna/sandbox`.

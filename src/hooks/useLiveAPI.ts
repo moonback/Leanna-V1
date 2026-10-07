@@ -30,7 +30,33 @@ export interface LogEntry {
   timestamp: Date;
 }
 
+/**
+ * Snapshot du prompt système + contexte réellement injecté dans la session
+ * Gemini Live, émis par le serveur (message WS `prompt_debug`) à l'ouverture
+ * de session. Consommé par le PromptInspectorPanel.
+ */
+export interface PromptDebugState {
+  mode: string;
+  workspace: string;
+  systemText: string;
+  memoryContext: string;
+  knowledgeContext: string;
+  notebookContext: string;
+  combined: string;
+  stats: {
+    systemChars: number;
+    memoryChars: number;
+    knowledgeChars: number;
+    notebookChars: number;
+    combinedChars: number;
+    combinedTokensEst: number;
+  };
+  tools: string[];
+  generatedAt: string;
+}
+
 export type { TranscriptRole, TranscriptEntry, ContextSource, ActivityStep, ModifiedFile, TokenUsage, TokenUsageSession, ReasoningState, ReasoningStep, PromptContextState, ContextAlertLevel };
+// PromptDebugState est déclaré plus bas dans ce fichier ; il est exporté via sa déclaration `export interface`.
 
 export function useLiveAPI() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -38,6 +64,7 @@ export function useLiveAPI() {
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTaskViewModel[]>([]);
   const [workflows, setWorkflows] = useState<WorkflowViewModel[]>([]);
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
+  const [promptDebug, setPromptDebug] = useState<PromptDebugState | null>(null);
 
   // ── Configuration résumé automatique ───────────────────────────────────────
   const [autoSummarizeEnabled, setAutoSummarizeEnabled] = useState(true);
@@ -210,6 +237,28 @@ export function useLiveAPI() {
 
   // Define onMessage handler for WS events
   const handleWebSocketMessage = useCallback((msg: any) => {
+    if (msg.type === 'prompt_debug') {
+      setPromptDebug({
+        mode: typeof msg.mode === 'string' ? msg.mode : 'full',
+        workspace: typeof msg.workspace === 'string' ? msg.workspace : '',
+        systemText: typeof msg.systemText === 'string' ? msg.systemText : '',
+        memoryContext: typeof msg.memoryContext === 'string' ? msg.memoryContext : '',
+        knowledgeContext: typeof msg.knowledgeContext === 'string' ? msg.knowledgeContext : '',
+        notebookContext: typeof msg.notebookContext === 'string' ? msg.notebookContext : '',
+        combined: typeof msg.combined === 'string' ? msg.combined : '',
+        stats: {
+          systemChars: msg.stats?.systemChars ?? 0,
+          memoryChars: msg.stats?.memoryChars ?? 0,
+          knowledgeChars: msg.stats?.knowledgeChars ?? 0,
+          notebookChars: msg.stats?.notebookChars ?? 0,
+          combinedChars: msg.stats?.combinedChars ?? 0,
+          combinedTokensEst: msg.stats?.combinedTokensEst ?? 0,
+        },
+        tools: Array.isArray(msg.tools) ? msg.tools.filter((t: unknown) => typeof t === 'string') : [],
+        generatedAt: typeof msg.generatedAt === 'string' ? msg.generatedAt : new Date().toISOString(),
+      });
+      return;
+    }
     if (msg.tool_used) {
       let args: Record<string, unknown> = {};
       try { args = typeof msg.info === 'string' ? JSON.parse(msg.info) : (msg.info ?? {}); } catch { /* trace sans arguments structurés */ }
@@ -792,6 +841,7 @@ export function useLiveAPI() {
       reasoning,
       tokenUsage,
       promptContext,
+      promptDebug,
       summarizeContext,
       // ── Monitoring latence vocale ────────────────────────────────────────
       lastLatencyMs,

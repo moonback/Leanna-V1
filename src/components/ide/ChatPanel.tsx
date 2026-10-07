@@ -5,7 +5,7 @@ import {
   Trash2, Power, GripVertical, Minus, PanelRight, Maximize2, Minimize2,
   Download, MessageSquare, MoreVertical, ArrowDown,
   Copy, CheckCheck, RefreshCw, Sparkles, Hash, Loader2,
-  FileText, Terminal, FlaskConical, Volume2,
+  FileText, Terminal, FlaskConical, Volume2, FileSearch,
 } from 'lucide-react';
 import { marked } from 'marked';
 import { sanitizeMarkdownHtml } from '../../utils/sanitizeMarkdownHtml.js';
@@ -19,6 +19,7 @@ import { useFileMention } from '../../hooks/useFileMention.js';
 import { useSlashCommand } from '../../hooks/useSlashCommand.js';
 import { DocumentUpload, DropZoneOverlay, useDocumentDrop, type DocumentResult } from './DocumentUpload.js';
 import { SkillPicker } from './SkillPicker.js';
+import { PromptInspectorPanel } from './PromptInspectorPanel.js';
 import type { CustomSkill } from '../../hooks/useCustomSkills.js';
 import type { TranscriptEntry, ContextSource } from '../../hooks/useLiveAPI.js';
 
@@ -1004,7 +1005,7 @@ export function ChatPanel({
   const {
     connected, connecting, connect, disconnect,
     sendTextMessage, sendRawMessage, transcript, clearTranscript,
-    activity, isBusy, muted, toggleMute, reasoning,
+    activity, isBusy, muted, toggleMute, reasoning, promptDebug,
   } = useLiveAPIContext();
   const { profile } = useProfile();
 
@@ -1020,6 +1021,7 @@ export function ChatPanel({
     catch { return false; }
   });
   const [showMenu, setShowMenu] = useState(false);
+  const [showPromptInspector, setShowPromptInspector] = useState(false);
 
   // ── Toast state ─────────────────────────────────────────────────────────────
   const [toast, setToast] = useState<{ message: string; icon?: React.ReactNode } | null>(null);
@@ -1313,6 +1315,17 @@ export function ChatPanel({
         )}
       </AnimatePresence>
 
+      {/* Inspecteur du prompt système + contexte */}
+      <AnimatePresence>
+        {showPromptInspector && (
+          <PromptInspectorPanel
+            promptDebug={promptDebug}
+            connected={connected}
+            onClose={() => setShowPromptInspector(false)}
+          />
+        )}
+      </AnimatePresence>
+
       <motion.div
         ref={panelRef}
         className="fixed flex flex-col overflow-hidden"
@@ -1559,6 +1572,11 @@ export function ChatPanel({
                       icon={<Volume2 size={13} style={{ color: 'var(--accent-primary)' }} />}
                       label="Tester la voix"
                       onClick={() => { void handleVoiceTest(); setShowMenu(false); }}
+                    />
+                    <MenuButton
+                      icon={<FileSearch size={13} style={{ color: 'var(--accent-primary)' }} />}
+                      label="Inspecter le prompt"
+                      onClick={() => { setShowPromptInspector(true); setShowMenu(false); }}
                     />
 
                     <div className="h-px mx-3 my-1" style={{ backgroundColor: 'var(--border-base)' }} />
