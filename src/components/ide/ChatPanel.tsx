@@ -1321,6 +1321,8 @@ export function ChatPanel({
           <PromptInspectorPanel
             promptDebug={promptDebug}
             connected={connected}
+            chatWidth={docked ? width : width + 48}
+            chatFullscreen={fullscreen}
             onClose={() => setShowPromptInspector(false)}
           />
         )}

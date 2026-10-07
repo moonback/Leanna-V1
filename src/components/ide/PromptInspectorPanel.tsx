@@ -34,6 +34,14 @@ interface PromptInspectorPanelProps {
   promptDebug: PromptDebugState | null;
   connected: boolean;
   onClose: () => void;
+  /**
+   * Largeur (px) occupée par le ChatPanel sur le bord droit de l'écran.
+   * L'inspecteur réserve cette largeur à sa droite pour s'ouvrir « à côté »
+   * du chat sans le recouvrir. Ignoré si `chatFullscreen` est vrai.
+   */
+  chatWidth: number;
+  /** Le ChatPanel est en plein écran : l'inspecteur se superpose alors en pleine largeur. */
+  chatFullscreen: boolean;
 }
 
 function formatChars(n: number): string {
@@ -41,7 +49,13 @@ function formatChars(n: number): string {
   return String(n);
 }
 
-export function PromptInspectorPanel({ promptDebug, connected, onClose }: PromptInspectorPanelProps) {
+export function PromptInspectorPanel({
+  promptDebug,
+  connected,
+  onClose,
+  chatWidth,
+  chatFullscreen,
+}: PromptInspectorPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>('system');
   const [copied, setCopied] = useState(false);
 
@@ -81,26 +95,25 @@ export function PromptInspectorPanel({ promptDebug, connected, onClose }: Prompt
     }
   };
 
+  // Marge réservée à droite = largeur du ChatPanel, sauf s'il est en plein
+  // écran (l'inspecteur se superpose alors par-dessus, à gauche).
+  const rightReserve = chatFullscreen ? 0 : chatWidth;
+
   return (
-    <motion.div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      style={{ backgroundColor: 'color-mix(in srgb, var(--bg-base) 72%, transparent)', backdropFilter: 'blur(4px)' }}
-      onClick={onClose}
-    >
       <motion.div
-        className="flex flex-col w-full max-w-3xl rounded-xl overflow-hidden shadow-2xl"
-        initial={{ scale: 0.96, y: 8 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.96, y: 8 }}
+        className="fixed top-0 bottom-0 flex flex-col overflow-hidden z-[9992]"
+        initial={{ x: '100%', opacity: 0.4 }}
+        animate={{ x: 0, opacity: 1 }}
+        exit={{ x: '100%', opacity: 0.4 }}
+        transition={{ type: 'spring', bounce: 0.14, duration: 0.4 }}
         style={{
-          height: 'min(78vh, 720px)',
+          right: rightReserve,
+          left: 0,
           backgroundColor: 'var(--bg-panel)',
-          border: '1px solid var(--border-base)',
+          borderRight: '1px solid var(--border-base)',
+          boxShadow: '4px 0 32px rgba(0,0,0,0.28), 1px 0 0 var(--border-base)',
+          backdropFilter: 'blur(24px)',
         }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ───────────────────────────────────────────── */}
         <div
@@ -244,7 +257,6 @@ export function PromptInspectorPanel({ promptDebug, connected, onClose }: Prompt
           </>
         )}
       </motion.div>
-    </motion.div>
   );
 }
 
