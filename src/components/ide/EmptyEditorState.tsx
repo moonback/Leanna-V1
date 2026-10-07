@@ -30,29 +30,6 @@ const SPRING = { type: 'spring' as const, bounce: 0, duration: 0.4 };
 type GeminiStatus = 'configured' | 'invalid' | 'unconfigured' | null;
 type IconType = React.ComponentType<{ size?: number; style?: React.CSSProperties }>;
 
-// ─── Hook : machine à écrire ─────────────────────────────────────────────
-
-function useTypewriter(text: string, active: boolean) {
-  const [displayed, setDisplayed] = useState(text);
-
-  useEffect(() => {
-    if (!active) {
-      setDisplayed(text);
-      return;
-    }
-    let index = 0;
-    setDisplayed('');
-    const id = setInterval(() => {
-      index += 1;
-      setDisplayed(text.slice(0, index));
-      if (index >= text.length) clearInterval(id);
-    }, 24);
-    return () => clearInterval(id);
-  }, [active, text]);
-
-  return { displayed, isTyping: active && displayed.length < text.length };
-}
-
 // ─── Hook : statut Git ───────────────────────────────────────────────────
 
 interface GitInfo { branch?: string; files?: unknown; repository?: string }
@@ -173,10 +150,11 @@ function GlobalStyles() {
       .ee-glass > * { position: relative; z-index: 1; }
       .ee-glass:hover { border-color: color-mix(in srgb, var(--primary) 45%, transparent); }
 
-      .ee-hero {
-        border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+      /* Carte Leanna : accent primaire plus marqué */
+      .ee-card-primary {
+        border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
         background-image: linear-gradient(135deg,
-          color-mix(in srgb, var(--primary) 14%, transparent) 0%, transparent 65%);
+          color-mix(in srgb, var(--primary) 10%, transparent) 0%, transparent 60%);
       }
 
       /* Cartes d'action rapide : accent coloré par carte */
@@ -269,7 +247,6 @@ function GlobalStyles() {
 
       .ee-dot-live { animation: ee-pulse 2s ease-in-out infinite; }
       @keyframes ee-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-      @keyframes ee-caret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
       @media (prefers-reduced-motion: reduce) {
         .ee-dot-live { animation: none; }
@@ -299,7 +276,7 @@ const Kbd = React.memo(function Kbd({
 
 const ActionCard = React.memo(function ActionCard({
   icon: Icon, title, description, shortcut, onClick, disabled = false, reduceMotion = false,
-  accent = 'var(--primary)', comingSoon = false,
+  accent = 'var(--primary)', comingSoon = false, primary = false,
 }: {
   icon: IconType;
   title: string;
@@ -310,6 +287,7 @@ const ActionCard = React.memo(function ActionCard({
   reduceMotion?: boolean;
   accent?: string;
   comingSoon?: boolean;
+  primary?: boolean;
 }) {
   const descId = useId();
   return (
@@ -318,7 +296,7 @@ const ActionCard = React.memo(function ActionCard({
       onClick={onClick}
       disabled={disabled}
       aria-describedby={descId}
-      className="ee-card ee-focus group flex items-start gap-3 p-4 text-left rounded-xl disabled:opacity-45 disabled:cursor-not-allowed"
+      className={`ee-card ee-focus group flex items-start gap-3 p-4 text-left rounded-xl disabled:opacity-45 disabled:cursor-not-allowed${primary ? ' ee-card-primary' : ''}`}
       style={{ ['--card-accent' as string]: accent }}
       whileHover={reduceMotion || disabled ? undefined : { y: -2 }}
       whileTap={reduceMotion || disabled ? undefined : { scale: 0.98 }}
@@ -556,7 +534,6 @@ export const EmptyEditorState = React.memo(function EmptyEditorState({
 
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showSystem, setShowSystem] = useState(false);
-  const [ctaHovered, setCtaHovered] = useState(false);
 
   const geminiStatus = useGeminiStatus();
   const gitInfo = useGitInfo();
@@ -626,13 +603,6 @@ export const EmptyEditorState = React.memo(function EmptyEditorState({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onCreateFile, onShowSettings, handleConnect, onOpenSearch, showSystem]);
-
-  // ── Textes du CTA ──
-  const ctaTitle = connected ? 'Connecter' : `Démarrer ${aiName}`;
-  const ctaText = connected
-    ? 'Une session vocale et texte est en cours.'
-    : 'Parlez, écrivez ou confiez une tâche à votre assistant.';
-  const { displayed: ctaDisplayed, isTyping } = useTypewriter(ctaText, ctaHovered && !reduceMotion);
 
   const statusLabel = connected ? 'Prête' : isBusy ? 'Connexion…' : 'En attente';
   const workspaceName = ws.workspace ? ws.workspace.path.split(/[/\\]/).pop() : null;
@@ -722,67 +692,27 @@ export const EmptyEditorState = React.memo(function EmptyEditorState({
             )}
           </AnimatePresence>
 
-          {/* ── Action principale ── */}
-          <motion.button
-            type="button"
-            onClick={handleConnect}
-            onMouseEnter={() => setCtaHovered(true)}
-            onMouseLeave={() => setCtaHovered(false)}
-            onFocus={() => setCtaHovered(true)}
-            onBlur={() => setCtaHovered(false)}
-            className="ee-glass ee-hero ee-focus w-full flex items-center gap-4 sm:gap-5 p-5 sm:p-6 mb-6 text-left rounded-[22px]"
-            style={{ minHeight: '112px' }}
-            aria-label={ctaTitle}
-            whileHover={reduceMotion ? undefined : { scale: 1.01 }}
-            whileTap={reduceMotion ? undefined : { scale: 0.99 }}
-            {...enter(0.06)}
-          >
-            <span
-              className="w-12 h-12 flex items-center justify-center rounded-xl flex-shrink-0"
-              style={{
-                backgroundColor: 'color-mix(in srgb, var(--primary) 16%, transparent)',
-                border: '1px solid color-mix(in srgb, var(--primary) 32%, transparent)',
-                boxShadow: '0 4px 14px -2px color-mix(in srgb, var(--primary) 40%, transparent)',
-              }}
-            >
-              <Sparkles size={20} style={{ color: 'var(--primary)' }} />
-            </span>
-
-            <span className="flex-1 min-w-0">
-              <span className="block text-lg sm:text-xl font-bold leading-tight" style={{ color: 'var(--text)' }}>
-                {ctaTitle}
-              </span>
-              {/* Le texte complet est rendu invisible pour réserver la hauteur :
-                  l'animation ne fait plus sauter la mise en page. */}
-              <span className="relative block text-sm mt-1 leading-snug" style={{ color: 'var(--text-muted)' }}>
-                <span className="invisible" aria-hidden="true">{ctaText}</span>
-                <span className="absolute inset-0" aria-hidden={ctaHovered}>
-                  {ctaDisplayed}
-                  {isTyping && (
-                    <span
-                      style={{
-                        display: 'inline-block', width: 1, height: '0.9em', marginLeft: 1,
-                        verticalAlign: 'text-bottom', backgroundColor: 'var(--text-muted)',
-                        animation: 'ee-caret 0.6s step-end infinite',
-                      }}
-                    />
-                  )}
-                </span>
-              </span>
-            </span>
-
-            <Kbd className="hidden sm:inline-flex">{MOD}+L</Kbd>
-          </motion.button>
-
           {/* ── Missions interrompues ── */}
           <InterruptedMissionsSection reduceMotion={reduceMotion} />
 
           {/* ── Actions rapides ── */}
           <motion.section
             aria-label="Actions rapides"
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
             {...enter(0.12)}
           >
+            <ActionCard
+              icon={Sparkles}
+              title={connected ? `Reprendre avec ${aiName}` : `Démarrer ${aiName}`}
+              description={connected
+                ? 'Session en cours : revenez à la conversation.'
+                : 'Parlez, écrivez ou confiez une tâche.'}
+              shortcut={`${MOD}+L`}
+              onClick={handleConnect}
+              reduceMotion={reduceMotion}
+              accent="var(--primary)"
+              primary
+            />
             <ActionCard
               icon={Bot} title="Agents" description="Flotte et activité"
               onClick={handleOpenAgents} reduceMotion={reduceMotion}
