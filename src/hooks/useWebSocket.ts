@@ -161,13 +161,17 @@ export function useWebSocket({ onMessage, onAudioChunk, onLog }: UseWebSocketOpt
             // Le serveur envoie ce message quelques secondes AVANT que la
             // session Gemini n'expire, ce qui nous laisse le temps de reconnecter
             // proprement sans couper l'utilisateur au milieu d'une phrase.
-            if (msg.type === 'session_restart' && (msg.reason === 'goaway' || msg.reason === 'context_overflow')) {
+            if (msg.type === 'session_restart' && (msg.reason === 'goaway' || msg.reason === 'context_overflow' || msg.reason === 'prompt_replace')) {
               const convId: string | null = msg.conversation_id ?? null;
               if (msg.reason === 'context_overflow') {
                 onLog(`Limite de tokens atteinte — redémarrage automatique avec résumé de la conversation${convId ? ` (conv: ${convId.slice(0, 8)})` : ''}`, 'system');
                 contextOverflowPendingRef.current = true;
                 // Sauvegarder le résumé pour l'injecter lors de la reconnexion (fallback si Supabase indisponible)
                 pendingContextSummaryRef.current = msg.summary || '';
+              } else if (msg.reason === 'prompt_replace') {
+                onLog(`Prompt système remplacé — reconnexion de la session${convId ? ` (conv: ${convId.slice(0, 8)})` : ''}`, 'system');
+                contextOverflowPendingRef.current = false;
+                pendingContextSummaryRef.current = '';
               } else {
                 onLog(`Session Gemini expirée (GoAway) — reprise automatique${convId ? ` (conv: ${convId.slice(0, 8)})` : ''}`, 'system');
                 contextOverflowPendingRef.current = false;
@@ -303,13 +307,17 @@ export function useWebSocket({ onMessage, onAudioChunk, onLog }: UseWebSocketOpt
           const msg = JSON.parse(event.data);
 
           // ── Intercepter session_restart (GoAway ou Context Overflow) ──────────────────────
-          if (msg.type === 'session_restart' && (msg.reason === 'goaway' || msg.reason === 'context_overflow')) {
+          if (msg.type === 'session_restart' && (msg.reason === 'goaway' || msg.reason === 'context_overflow' || msg.reason === 'prompt_replace')) {
             const convId: string | null = msg.conversation_id ?? null;
             if (msg.reason === 'context_overflow') {
               onLog(`Limite de tokens atteinte — redémarrage automatique avec résumé de la conversation${convId ? ` (conv: ${convId.slice(0, 8)})` : ''}`, 'system');
               contextOverflowPendingRef.current = true;
               // Sauvegarder le résumé pour l'injecter lors de la reconnexion (fallback si Supabase indisponible)
               pendingContextSummaryRef.current = msg.summary || '';
+            } else if (msg.reason === 'prompt_replace') {
+              onLog(`Prompt système remplacé — reconnexion de la session${convId ? ` (conv: ${convId.slice(0, 8)})` : ''}`, 'system');
+              contextOverflowPendingRef.current = false;
+              pendingContextSummaryRef.current = '';
             } else {
               onLog(`Session Gemini expirée (GoAway) — reprise automatique${convId ? ` (conv: ${convId.slice(0, 8)})` : ''}`, 'system');
               contextOverflowPendingRef.current = false;

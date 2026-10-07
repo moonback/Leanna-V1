@@ -65,6 +65,8 @@ export function useLiveAPI() {
   const [workflows, setWorkflows] = useState<WorkflowViewModel[]>([]);
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null);
   const [promptDebug, setPromptDebug] = useState<PromptDebugState | null>(null);
+  const [systemOverride, setSystemOverride] = useState<{ applied: boolean; chars: number; truncated: boolean; at: string } | null>(null);
+  const [systemReplace, setSystemReplace] = useState<{ applied: boolean; chars: number; truncated: boolean; at: string } | null>(null);
 
   // ── Configuration résumé automatique ───────────────────────────────────────
   const [autoSummarizeEnabled, setAutoSummarizeEnabled] = useState(true);
@@ -257,6 +259,36 @@ export function useLiveAPI() {
         tools: Array.isArray(msg.tools) ? msg.tools.filter((t: unknown) => typeof t === 'string') : [],
         generatedAt: typeof msg.generatedAt === 'string' ? msg.generatedAt : new Date().toISOString(),
       });
+      return;
+    }
+    if (msg.type === 'system_prompt_override_ack') {
+      if (msg.reset || !msg.applied) {
+        setSystemOverride(null);
+        addLog(msg.error ? `Échec de l'override du prompt : ${msg.error}` : 'Prompt système réinitialisé pour la conversation.', msg.error ? 'error' : 'action');
+      } else {
+        setSystemOverride({
+          applied: true,
+          chars: msg.chars ?? 0,
+          truncated: msg.truncated === true,
+          at: new Date().toISOString(),
+        });
+        addLog(`Prompt système modifié pour la conversation (${msg.chars ?? 0} car.${msg.truncated ? ', tronqué' : ''}).`, 'action');
+      }
+      return;
+    }
+    if (msg.type === 'system_prompt_replace_ack') {
+      if (msg.reset || !msg.applied) {
+        setSystemReplace(null);
+        addLog(msg.error ? `Échec du remplacement du prompt : ${msg.error}` : 'Prompt système d\u2019origine restauré — reconnexion…', msg.error ? 'error' : 'action');
+      } else {
+        setSystemReplace({
+          applied: true,
+          chars: msg.chars ?? 0,
+          truncated: msg.truncated === true,
+          at: new Date().toISOString(),
+        });
+        addLog(`Prompt système remplacé (${msg.chars ?? 0} car.${msg.truncated ? ', tronqué' : ''}) — reconnexion de la session…`, 'action');
+      }
       return;
     }
     if (msg.tool_used) {
@@ -614,6 +646,26 @@ export function useLiveAPI() {
     sendRawMessage({ type: 'voice_context', ...ctx });
   }, [sendRawMessage]);
 
+  // ── Override du prompt système à la volée ────────────────────────────────────
+  // Applique une édition du prompt système à la conversation EN COURS. Le serveur
+  // l'injecte comme directive système forte (le systemInstruction Gemini étant
+  // figé à la connexion). `reset: true` ou un texte vide revient au prompt d'origine.
+  const sendSystemPromptOverride = useCallback((text: string, opts?: { reset?: boolean }) => {
+    const reset = opts?.reset === true;
+    sendRawMessage({ type: 'system_prompt_override', text, reset });
+    if (reset) setSystemOverride(null);
+  }, [sendRawMessage]);
+
+  // ── Remplacement complet du prompt système (reconnexion) ──────────────────────
+  // Réécrit intégralement le prompt système pour la conversation : le serveur
+  // l'enregistre puis déclenche une reconnexion de la session Gemini Live, qui
+  // repart avec le nouveau systemInstruction. `reset: true` restaure le prompt
+  // d'origine. Les garde-fous de sécurité restent toujours appliqués côté serveur.
+  const sendSystemPromptReplace = useCallback((text: string, opts?: { reset?: boolean }) => {
+    const reset = opts?.reset === true;
+    sendRawMessage({ type: 'system_prompt_replace', text, reset });
+  }, [sendRawMessage]);
+
   // ── Résumé automatique du contexte ─────────────────────────────────────────
   const summarizeContext = useCallback(async (keepTurns: number = 8) => {
     if (transcript.length <= keepTurns) {
@@ -842,6 +894,10 @@ export function useLiveAPI() {
       tokenUsage,
       promptContext,
       promptDebug,
+      systemOverride,
+      sendSystemPromptOverride,
+      systemReplace,
+      sendSystemPromptReplace,
       summarizeContext,
       // ── Monitoring latence vocale ────────────────────────────────────────
       lastLatencyMs,

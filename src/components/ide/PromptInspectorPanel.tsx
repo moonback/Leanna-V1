@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Check, Copy, FileText, Brain, Network, BookOpen, Layers, Wrench, X } from 'lucide-react';
+import { Check, Copy, FileText, Brain, Network, BookOpen, Layers, Wrench, X, Pencil, RotateCcw, RefreshCw } from 'lucide-react';
 
 import type { PromptDebugState } from '../../hooks/useLiveAPI.js';
 
@@ -42,6 +42,14 @@ interface PromptInspectorPanelProps {
   chatWidth: number;
   /** Le ChatPanel est en plein écran : l'inspecteur se superpose alors en pleine largeur. */
   chatFullscreen: boolean;
+  /** Applique une édition du prompt système à la conversation en cours (surcouche). */
+  onApplyOverride: (text: string, opts?: { reset?: boolean }) => void;
+  /** État de l'override actif pour cette conversation (null = aucun). */
+  override: { applied: boolean; chars: number; truncated: boolean; at: string } | null;
+  /** Remplace intégralement le prompt système (reconnexion de la session). */
+  onReplace: (text: string, opts?: { reset?: boolean }) => void;
+  /** État du remplacement complet actif (null = aucun). */
+  replaced: { applied: boolean; chars: number; truncated: boolean; at: string } | null;
 }
 
 function formatChars(n: number): string {
@@ -55,9 +63,15 @@ export function PromptInspectorPanel({
   onClose,
   chatWidth,
   chatFullscreen,
+  onApplyOverride,
+  override,
+  onReplace,
+  replaced,
 }: PromptInspectorPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>('system');
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
 
   const tabs = useMemo<TabDef[]>(() => {
     if (!promptDebug) return [];
@@ -193,33 +207,133 @@ export function PromptInspectorPanel({
             </div>
 
             {/* Barre d'action */}
-            <div className="flex items-center justify-between px-4 py-2 flex-shrink-0">
-              <span className="text-xs" style={{ color: 'var(--text-dimmed)' }}>
+            <div className="flex items-center justify-between gap-2 px-4 py-2 flex-shrink-0">
+              <span className="text-xs truncate" style={{ color: 'var(--text-dimmed)' }}>
                 {activeTab === 'tools'
                   ? `${promptDebug.tools.length} outil(s) déclaré(s)`
-                  : activeText.length === 0
-                    ? 'Bloc vide'
-                    : `${formatChars(activeText.length)} caractères`}
+                  : editing
+                    ? `${formatChars(draft.length)} car. — édition`
+                    : activeText.length === 0
+                      ? 'Bloc vide'
+                      : `${formatChars(activeText.length)} caractères`}
+                {activeTab === 'system' && !editing && replaced?.applied && (
+                  <span className="ml-2" style={{ color: 'var(--accent-primary)' }}>
+                    · prompt remplacé ({formatChars(replaced.chars)} car.)
+                  </span>
+                )}
+                {activeTab === 'system' && !editing && !replaced?.applied && override?.applied && (
+                  <span className="ml-2" style={{ color: 'var(--accent-primary)' }}>
+                    · surcouche active ({formatChars(override.chars)} car.)
+                  </span>
+                )}
               </span>
-              <button
-                type="button"
-                onClick={handleCopy}
-                disabled={activeText.length === 0}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40"
-                style={{
-                  backgroundColor: 'var(--bg-active)',
-                  color: copied ? 'var(--accent-primary)' : 'var(--text-muted)',
-                }}
-                title="Copier le contenu de l'onglet"
-              >
-                {copied ? <Check size={12} /> : <Copy size={12} />}
-                {copied ? 'Copié' : 'Copier'}
-              </button>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                {activeTab === 'system' && !editing && (
+                  <button
+                    type="button"
+                    onClick={() => { setDraft(promptDebug.systemText); setEditing(true); }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                    style={{ backgroundColor: 'var(--bg-active)', color: 'var(--text-muted)' }}
+                    title="Modifier le prompt système pour cette conversation"
+                  >
+                    <Pencil size={12} />
+                    Éditer
+                  </button>
+                )}
+                {activeTab === 'system' && !editing && (override?.applied || replaced?.applied) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (replaced?.applied) onReplace('', { reset: true });
+                      if (override?.applied) onApplyOverride('', { reset: true });
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                    style={{ backgroundColor: 'var(--bg-active)', color: 'var(--text-muted)' }}
+                    title="Revenir au prompt système d'origine"
+                  >
+                    <RotateCcw size={12} />
+                    Réinitialiser
+                  </button>
+                )}
+                {activeTab === 'system' && editing && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { setEditing(false); setDraft(''); }}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                      style={{ backgroundColor: 'var(--bg-active)', color: 'var(--text-muted)' }}
+                    >
+                      <X size={12} />
+                      Annuler
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { onApplyOverride(draft); setEditing(false); }}
+                      disabled={!connected}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40"
+                      style={{ backgroundColor: 'var(--bg-active)', color: 'var(--text-muted)' }}
+                      title={connected ? 'Ajouter comme directive sans couper la session (surcouche)' : 'Session déconnectée'}
+                    >
+                      <Check size={12} />
+                      Appliquer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { onReplace(draft); setEditing(false); }}
+                      disabled={!connected}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-40"
+                      style={{
+                        backgroundColor: 'color-mix(in srgb, var(--accent-primary) 18%, transparent)',
+                        color: 'var(--accent-primary)',
+                      }}
+                      title={connected ? 'Remplacer intégralement le prompt système (reconnecte la session)' : 'Session déconnectée'}
+                    >
+                      <RefreshCw size={12} />
+                      Remplacer
+                    </button>
+                  </>
+                )}
+                {!editing && (
+                  <button
+                    type="button"
+                    onClick={handleCopy}
+                    disabled={activeText.length === 0}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40"
+                    style={{
+                      backgroundColor: 'var(--bg-active)',
+                      color: copied ? 'var(--accent-primary)' : 'var(--text-muted)',
+                    }}
+                    title="Copier le contenu de l'onglet"
+                  >
+                    {copied ? <Check size={12} /> : <Copy size={12} />}
+                    {copied ? 'Copié' : 'Copier'}
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Contenu */}
             <div className="flex-1 min-h-0 overflow-auto px-4 pb-4 custom-scrollbar">
-              {activeTab === 'tools' ? (
+              {activeTab === 'system' && editing ? (
+                <div className="flex flex-col h-full gap-2">
+                  <p className="text-xs flex-shrink-0" style={{ color: 'var(--text-dimmed)' }}>
+                    <strong style={{ color: 'var(--text-muted)' }}>Appliquer</strong> : ajoute ton texte comme directive prioritaire sans couper la session (surcouche).{' '}
+                    <strong style={{ color: 'var(--text-muted)' }}>Remplacer</strong> : réécrit intégralement le prompt système et reconnecte la session.
+                    Dans les deux cas, les garde-fous de sécurité restent actifs. Réinitialise pour revenir au prompt d'origine.
+                  </p>
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    spellCheck={false}
+                    className="flex-1 min-h-0 w-full resize-none rounded-lg p-3 text-xs font-mono leading-relaxed custom-scrollbar outline-none"
+                    style={{
+                      backgroundColor: 'var(--bg-base)',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--accent-primary)',
+                    }}
+                  />
+                </div>
+              ) : activeTab === 'tools' ? (
                 promptDebug.tools.length === 0 ? (
                   <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                     Aucun outil déclaré pour cette session.

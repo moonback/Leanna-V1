@@ -1006,6 +1006,8 @@ export function ChatPanel({
     connected, connecting, connect, disconnect,
     sendTextMessage, sendRawMessage, transcript, clearTranscript,
     activity, isBusy, muted, toggleMute, reasoning, promptDebug,
+    systemOverride, sendSystemPromptOverride,
+    systemReplace, sendSystemPromptReplace,
   } = useLiveAPIContext();
   const { profile } = useProfile();
 
@@ -1323,6 +1325,10 @@ export function ChatPanel({
             connected={connected}
             chatWidth={docked ? width : width + 48}
             chatFullscreen={fullscreen}
+            override={systemOverride}
+            onApplyOverride={sendSystemPromptOverride}
+            replaced={systemReplace}
+            onReplace={sendSystemPromptReplace}
             onClose={() => setShowPromptInspector(false)}
           />
         )}
