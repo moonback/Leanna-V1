@@ -240,21 +240,80 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): Env {
 let cachedEnv: Env | undefined;
 
 /**
+ * Indique le mode « embarqué » (app Electron packagée / production). Dans ce
+ * mode, une configuration invalide NE DOIT PAS tuer le process : l'UI doit
+ * s'afficher pour laisser l'utilisateur corriger ses clés via EnvSetupModal.
+ */
+function isEmbeddedRuntime(): boolean {
+  return (
+    process.env.NODE_ENV === "production" ||
+    Boolean(process.env.ELECTRON_APP_PATH)
+  );
+}
+
+/**
+ * Parse tolérant : si la validation stricte échoue, on retire UNIQUEMENT les
+ * clés signalées comme invalides par zod puis on reparse. Les variables
+ * fautives retombent ainsi sur leur valeur par défaut / absente, pendant que
+ * tout le reste de la configuration demeure validé et typé.
+ *
+ * Garantit que {@link getEnv} ne lève jamais en mode embarqué, respectant le
+ * contrat de « démarrage en mode dégradé » du bootstrap : le serveur démarre,
+ * l'UI s'affiche, et l'utilisateur corrige ses clés via EnvSetupModal.
+ */
+function parseEnvLenient(source: NodeJS.ProcessEnv = process.env): Env {
+  const result = envSchema.safeParse(source);
+  if (result.success) return result.data;
+
+  const sanitized: NodeJS.ProcessEnv = { ...source };
+  const dropped: string[] = [];
+  for (const issue of result.error.issues) {
+    const key = issue.path[0];
+    if (typeof key === "string" && key in sanitized) {
+      delete sanitized[key];
+      if (!dropped.includes(key)) dropped.push(key);
+    }
+  }
+
+  if (dropped.length > 0) {
+    process.stderr.write(
+      `[env] ⚠️ Clé(s) ignorée(s) (mode dégradé) : ${dropped.join(", ")}. ` +
+        `Corrigez-les via les paramètres pour les réactiver.\n`,
+    );
+  }
+
+  // Après suppression des clés fautives, le reparse doit réussir. S'il échoue
+  // encore (cas improbable : contrainte croisée résiduelle), on renvoie un objet
+  // typé minimal plutôt que de laisser remonter l'exception.
+  const retry = envSchema.safeParse(sanitized);
+  return retry.success ? retry.data : ({} as Env);
+}
+
+/**
  * Valide `process.env` et met en cache le résultat typé. À appeler UNE fois au
  * démarrage (bootstrap), juste après le chargement dotenv et le déchiffrement.
+ *
+ * En mode embarqué (Electron packagé / production), bascule sur un parse
+ * tolérant au lieu de lever : le process ne doit pas mourir sur une clé
+ * optionnelle invalide. En développement, l'échec reste strict et visible.
  */
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  cachedEnv = parseEnv(source);
+  cachedEnv = isEmbeddedRuntime() ? parseEnvLenient(source) : parseEnv(source);
   return cachedEnv;
 }
 
 /**
  * Accès typé à la configuration validée. Charge paresseusement depuis
  * `process.env` si {@link loadEnv} n'a pas encore été appelé (utile en test).
+ *
+ * En mode embarqué, le chargement paresseux est tolérant pour ne jamais lever
+ * au moment de l'instanciation d'un module (ex: TelemetryService) : une
+ * configuration partiellement invalide ne doit pas empêcher le serveur de
+ * démarrer ni l'UI de s'afficher.
  */
 export function getEnv(): Env {
   if (!cachedEnv) {
-    cachedEnv = parseEnv(process.env);
+    cachedEnv = isEmbeddedRuntime() ? parseEnvLenient(process.env) : parseEnv(process.env);
   }
   return cachedEnv;
 }
