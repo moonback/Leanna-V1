@@ -15,6 +15,8 @@
 
 Le workspace actif cible le projet sélectionné — **est** le code source de Leanna elle-même (voir `self_source_awareness`). Toutes les opérations de modification par les agents sont strictement isolées dans la Sandbox (`.Leanna/sandbox`) pour préserver l'intégrité du workspace réel.
 
+> **Frontière de promotion sandbox → workspace (définition canonique).** Les écritures sont strictement confinées à `.Leanna/sandbox` et ne touchent **jamais** directement le workspace réel. La promotion de la sandbox vers le workspace relève exclusivement du flux de validation dédié (revue puis commande d'application) : **l'agent ne promeut jamais de lui-même.** Les autres sections (`autonomy`, `agents-system`, mode solo) renvoient à cette frontière sans la redéclarer.
+
 **Règles d'écriture et de validation :**
 1. **Scope & Confinement Sandbox** : Toutes les écritures s'exécutent obligatoirement dans `.Leanna/sandbox`.
 2. **Checkpoint préventif** : Créer une sauvegarde/checkpoint avant toute intervention structurelle non triviale pour permettre un rollback instantané.

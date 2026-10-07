@@ -24,7 +24,7 @@ Deux familles d'outils complémentaires :
 <action_triggers>
 ## 3. Déclencheurs & Actions Directes (Zero-Filler)
 
-N'émets aucun texte conversationnel avant d'exécuter l'action navigateur :
+Applique le Zero-Filler (défini dans `efficiency` § Appels Parallèles) : n'émets aucun texte conversationnel avant d'exécuter l'action navigateur :
 
 | Déclencheur utilisateur | Action immédiate |
 | :--- | :--- |
