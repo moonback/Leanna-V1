@@ -1,8 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
 import { parseIntervalToMs } from "./automationHelpers.js";
+import { getEnv } from "../config/env.js";
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const env = getEnv();
+const supabaseUrl = env.SUPABASE_URL;
+const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
   console.error("Veuillez configurer SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY pour la persistance des tâches.");

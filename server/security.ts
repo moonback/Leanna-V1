@@ -203,8 +203,9 @@ export function ensureApiToken(): string {
     process.env.Leanna_API_TOKEN = newToken;
     
     console.log(`[Security] ✓ Generated new API token and saved to ${path.basename(targetPath)}`);
-    console.log(`[Security] ⚠️  IMPORTANT: Save this token securely. It will be required for all API access.`);
-    console.log(`[Security] Token: ${newToken}`);
+    console.log(`[Security] ⚠️  IMPORTANT: The token is stored in ${path.basename(targetPath)}. It is required for all API access — keep that file secret and never commit it.`);
+    // SECURITY: never log the token value itself (plaintext secret leak into logs).
+    // Read it from the .env file / Leanna_API_TOKEN when needed.
     
     return newToken;
   } catch (error) {
