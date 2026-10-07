@@ -24,7 +24,7 @@
 
 <br>
 
-<sub>Un IDE desktop qui transforme un objectif en mission vérifiée : comprendre, planifier, agir sous garde-fous, vérifier par preuve hashée, récupérer, apprendre.
+<sub>Le projet Leanna est une plateforme desktop local-first dédiée à l’exécution d’agents IA autonomes, structurée autour d’un cycle de compréhension, planification, exécution, observation, vérification et récupération.
 
 Rien ne quitte la machine sans action explicite. Chaque action à effet de bord traverse une chaîne d'autorisation (permissions, sandbox, dry-run, Safety Gate Jev, approbations). Le succès n'est jamais déclaré par un modèle : il est prouvé par l'état du workspace.</sub>
 
