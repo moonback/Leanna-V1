@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Leanna</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Manrope:wght@200;300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="splash.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0b0d;
+      --surface: #111317;
+      --border: rgba(255,255,255,0.06);
+      --border-strong: rgba(255,255,255,0.10);
+      --text: #e8eaed;
+      --text-dim: #6b7280;
+      --text-mute: #3f4550;
+      --accent: #00c2ff;
+      --mono: 'JetBrains Mono', ui-monospace, monospace;
+      --sans: 'Manrope', system-ui, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: rgba(10, 11, 13, 0.55);
+      color: var(--text);
+      font-family: var(--sans);
+      font-weight: 400;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Halo subtil derrière le logo */
+    .glow {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(circle, rgba(0,194,255,0.06) 0%, transparent 65%);
+      filter: blur(40px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Centrage plein écran */
+    .stage {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 24px;
+      gap: 40px;
+    }
+
+    /* ── Logo ── */
+    .logo-wrap {
+      position: relative;
+      width: 88px;
+      height: 88px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .logo-wrap::before {
+      content: '';
+      position: absolute;
+      inset: -32px;
+      background: radial-gradient(circle, rgba(0,194,255,0.14) 0%, transparent 65%);
+      filter: blur(20px);
+      pointer-events: none;
+    }
+    .logo-box {
+      position: relative;
+      width: 88px;
+      height: 88px;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.02),
+        0 24px 60px -20px rgba(0,194,255,0.25);
+    }
+    .logo-box video,
+    .logo-box img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+
+    /* ── Texte ── */
+    .title {
+      font-size: 44px;
+      font-weight: 200;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: var(--text);
+    }
+    .title .cursor {
+      color: var(--accent);
+      font-weight: 300;
+      animation: blink 1.1s steps(1) infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .subtitle {
+      margin-top: 14px;
+      font-size: 13px;
+      font-weight: 300;
+      color: var(--text-dim);
+      line-height: 1.6;
+      max-width: 420px;
+      letter-spacing: 0.005em;
+    }
+
+    /* ── Progress ── */
+    .progress {
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .progress-status {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: 0.02em;
+    }
+    .status-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-dim);
+    }
+    .dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 6px var(--accent);
+      animation: pulse 1.6s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+    .percent {
+      color: var(--text);
+      font-weight: 500;
+      min-width: 34px;
+      text-align: right;
+    }
+
+    .track {
+      height: 1px;
+      width: 100%;
+      background: var(--border);
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    .bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), #7ad8ff);
+      box-shadow: 0 0 10px rgba(0,194,255,0.6);
+      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="glow"></div>
+  <canvas id="bg-canvas"></canvas>
+
+  <div class="stage">
+
+    <div class="logo-wrap">
+      <div class="logo-box">
+        <video id="heroLogo" src="../assets/video-splash.mp4"
+               autoplay loop muted playsinline></video>
+      </div>
+    </div>
+
+    <div>
+      <h1 class="title">Leanna<span class="cursor">_</span></h1>
+      <p class="subtitle">
+        Analyse de code, génération et refactoring prédictif.
+        Une flotte d'agents autonomes intégrée à votre IDE.
+      </p>
+    </div>
+
+    <div class="progress">
+      <div class="progress-status">
+        <div class="status-left">
+          <span class="dot"></span>
+          <span id="statusLabel">Initialisation de l'environnement sécurisé...</span>
+        </div>
+        <span class="percent" id="percentLabel">0%</span>
+      </div>
+      <div class="track">
+        <div class="bar" id="progressBar"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const progressBar  = document.getElementById('progressBar');
+    const percentLabel = document.getElementById('percentLabel');
+    const statusLabel  = document.getElementById('statusLabel');
+
+    const STEPS = [
+      { pct: 15,  label: "Initialisation de l'environnement sécurisé..." },
+      { pct: 35,  label: "Démarrage du serveur local (port 4000)..." },
+      { pct: 58,  label: "Vérification des connexions & Knowledge System..." },
+      { pct: 78,  label: "Chargement du moteur AST & Call-Graph..." },
+      { pct: 92,  label: "Initialisation de la flotte d'agents autonomes..." },
+      { pct: 98,  label: "Initialisation des skills..." },
+      { pct: 100, label: "Système opérationnel • Lancement de leanna..." },
+    ];
+
+    let currentPct = 0, targetPct = 12, stepIndex = 0, serverHealthy = false;
+
+    function updateProgressUI(pct, text) {
+      currentPct = Math.min(100, Math.max(currentPct, pct));
+      if (progressBar) progressBar.style.width = currentPct + '%';
+      if (percentLabel) percentLabel.textContent = Math.round(currentPct) + '%';
+      if (text && statusLabel) statusLabel.textContent = text;
+    }
+
+    async function checkServerHealth() {
+      try {
+        const res = await fetch('http://127.0.0.1:4000/api/health');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.status === 'ok' || json.status === 'success') {
+            serverHealthy = true;
+          }
+        }
+      } catch { /* en cours de démarrage */ }
+    }
+
+    const progressTimer = setInterval(() => {
+      if (currentPct < targetPct) {
+        currentPct += 1.4;
+        updateProgressUI(currentPct);
+      }
+      if (stepIndex < STEPS.length) {
+        const step = STEPS[stepIndex];
+        targetPct = step.pct;
+        if (statusLabel) statusLabel.textContent = step.label;
+        if (serverHealthy && currentPct >= 60 && stepIndex < STEPS.length - 1) stepIndex++;
+      }
+    }, 45);
+
+    const stepInterval = setInterval(() => {
+      checkServerHealth();
+      if (stepIndex < STEPS.length - 1) stepIndex++;
+      else clearInterval(stepInterval);
+    }, 750);
+
+    window.setLoadingProgress = function(pct, text) {
+      targetPct = pct;
+      updateProgressUI(pct, text);
+    };
+
+     window.markComplete = function() {
+       clearInterval(progressTimer);
+       clearInterval(stepInterval);
+       updateProgressUI(100, "Système opérationnel • Lancement de leanna...");
+     };
+
+     // Particules de fond
+     const canvas = document.getElementById('bg-canvas');
+     const ctx = canvas.getContext('2d');
+     let width = canvas.width = window.innerWidth;
+     let height = canvas.height = window.innerHeight;
+     const particles = [];
+
+     class Particle {
+       constructor() {
+         this.reset();
+       }
+       reset() {
+         this.x = Math.random() * width;
+         this.y = Math.random() * height;
+         this.size = Math.random() * 1.5 + 0.5;
+         this.speedX = Math.random() * 0.4 - 0.2;
+         this.speedY = Math.random() * 0.4 - 0.2;
+         this.opacity = Math.random() * 0.5 + 0.1;
+       }
+       update() {
+         this.x += this.speedX;
+         this.y += this.speedY;
+         if (this.x < 0 || this.x > width || this.y < 0 || this.y > height) {
+           this.reset();
+         }
+       }
+       draw() {
+         ctx.fillStyle = `rgba(0, 194, 255, ${this.opacity})`;
+         ctx.beginPath();
+         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+         ctx.fill();
+       }
+     }
+
+     for (let i = 0; i < 100; i++) {
+       particles.push(new Particle());
+     }
+
+     function animate() {
+       ctx.clearRect(0, 0, width, height);
+       particles.forEach(p => {
+         p.update();
+         p.draw();
+       });
+       requestAnimationFrame(animate);
+     }
+     animate();
+
+     window.addEventListener('resize', () => {
+       width = canvas.width = window.innerWidth;
+       height = canvas.height = window.innerHeight;
+     });
+   </script>
+  </script>
+</body>
+</html>
