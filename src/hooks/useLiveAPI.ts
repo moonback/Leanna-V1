@@ -321,7 +321,7 @@ export function useLiveAPI() {
     }
     if (msg.type === 'ide-action' && msg.action) {
       const a = msg.action;
-      window.dispatchEvent(new CustomEvent('Leanna-ide-action', { detail: a }));
+      window.dispatchEvent(new CustomEvent('Leanna-action', { detail: a }));
       switch (a.type) {
         case 'browser-scroll':
           window.dispatchEvent(new CustomEvent('Leanna-browser-scroll', { detail: a }));
@@ -431,7 +431,7 @@ export function useLiveAPI() {
         'create_project_directory', 'rename_project_file', 'delete_project_file', 'delete_project_folder',
         'analyze_project_file', 'get_workspace_info', 'generate_codebase_markdown'];
       if (IDE_TOOLS.includes(msg.tool_start)) {
-        window.dispatchEvent(new CustomEvent('Leanna-ide-action', { detail: { type: 'open-ide' } }));
+        window.dispatchEvent(new CustomEvent('Leanna-action', { detail: { type: 'open-ide' } }));
       }
       startActivity(msg.tool_start, msg.args);
       // Dispatch for AgentPanel real-time tool tracking

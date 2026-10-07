@@ -75,9 +75,9 @@ export function InlineApproval({ sendMessage }: InlineApprovalProps) {
   const viewFile = useCallback(() => {
     if (!pending) return;
     // Ouvre le fichier dans l'éditeur sans fermer la demande d'approbation.
-    // 'Leanna-ide-action' {type:'open-file'} est géré dans main.tsx (navigue
-    // vers l'IDE puis relaie 'Leanna-ide-open-file').
-    window.dispatchEvent(new CustomEvent('Leanna-ide-action', { detail: { type: 'open-file', path: pending.filePath } }));
+    // 'Leanna-action' {type:'open-file'} est géré dans main.tsx (navigue
+    // vers l'IDE puis relaie 'Leanna-open-file').
+    window.dispatchEvent(new CustomEvent('Leanna-action', { detail: { type: 'open-file', path: pending.filePath } }));
   }, [pending]);
 
   const totalSeconds = pending ? Math.ceil(pending.timeoutMs / 1000) : 1;

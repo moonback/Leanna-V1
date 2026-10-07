@@ -598,7 +598,7 @@ export const EmptyEditorState = React.memo(function EmptyEditorState({
   }, []);
 
   const handleOpenBrowser = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('Leanna-ide-action', { detail: { type: 'open-browser' } }));
+    window.dispatchEvent(new CustomEvent('Leanna-action', { detail: { type: 'open-browser' } }));
   }, []);
 
   // Raccourcis : ⌘/Ctrl+N, +L, +, ainsi que « ? » pour l'aide

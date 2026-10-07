@@ -2735,9 +2735,9 @@ Environnement de développement recommandé :
 ## Cloner le dépôt
 
 ```bash
-git clone https://github.com/moonback/Leanna-IDE.git
+git clone https://github.com/moonback/Leanna.git
 
-cd Leanna-IDE
+cd Leanna
 ```
 
 ---

@@ -271,7 +271,7 @@ if (MODE_UPDATE) {
 let hasFailure = false;
 
 console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-console.log(' UI/UX AUDIT — Leanna (Leanna-IDEi)');
+console.log(' UI/UX AUDIT — Leanna (Leannai)');
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
 for (const rule of RULES) {

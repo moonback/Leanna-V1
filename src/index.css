@@ -2417,12 +2417,12 @@ button {
   --ide-sidebar-item-bg: #0d0d0d;
   --ide-shell-border: #ffffff;
 }
-.Leanna-ide-shell {
+.Leanna-shell {
   background:
     radial-gradient(circle at 50% -18%, color-mix(in srgb, var(--accent-primary) 4%, transparent), transparent 28rem),
     var(--ide-shell-bg);
 }
-.Leanna-ide-workspace {
+.Leanna-workspace {
   background: var(--ide-panel-bg);
   border-color: var(--ide-shell-border);
 }
@@ -2486,7 +2486,7 @@ button {
   --premium-divider: #ffffff;
 }
 
-:root[data-theme="high-contrast"] .Leanna-ide-shell,
+:root[data-theme="high-contrast"] .Leanna-shell,
 :root[data-theme="high-contrast"] body {
   background: var(--bg-base);
 }

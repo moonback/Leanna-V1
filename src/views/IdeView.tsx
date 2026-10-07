@@ -359,9 +359,9 @@ export default function IdeView() {
   // ── Handle AI-triggered file open ──────────────────────────────────────────
 
   useEffect(() => {
-    const pending = sessionStorage.getItem('Leanna-ide-pending-file');
+    const pending = sessionStorage.getItem('Leanna-pending-file');
     if (pending) {
-      sessionStorage.removeItem('Leanna-ide-pending-file');
+      sessionStorage.removeItem('Leanna-pending-file');
       try {
         const { path, line, column } = JSON.parse(pending);
         if (typeof path === 'string') {
@@ -445,13 +445,13 @@ export default function IdeView() {
       console.log('[IdeView] Tree cleared for no-workspace mode');
     };
 
-    window.addEventListener('Leanna-ide-open-file', handleOpenFile);
-    window.addEventListener('Leanna-ide-file-changed', handleFileChanged);
+    window.addEventListener('Leanna-open-file', handleOpenFile);
+    window.addEventListener('Leanna-file-changed', handleFileChanged);
     window.addEventListener('Leanna-workspace-changed', handleWorkspaceChanged);
     window.addEventListener('Leanna-no-workspace-mode', handleNoWorkspace);
     return () => {
-      window.removeEventListener('Leanna-ide-open-file', handleOpenFile);
-      window.removeEventListener('Leanna-ide-file-changed', handleFileChanged);
+      window.removeEventListener('Leanna-open-file', handleOpenFile);
+      window.removeEventListener('Leanna-file-changed', handleFileChanged);
       window.removeEventListener('Leanna-workspace-changed', handleWorkspaceChanged);
       window.removeEventListener('Leanna-no-workspace-mode', handleNoWorkspace);
     };
@@ -476,7 +476,7 @@ export default function IdeView() {
     };
   }, [showMissions]);
 
-  // ── Actions navigateur pilotées par Leanna via Leanna-ide-action ───────────
+  // ── Actions navigateur pilotées par Leanna via Leanna-action ───────────
   useEffect(() => {
     const handle = (e: Event) => {
       const detail = (e as CustomEvent).detail;
@@ -496,8 +496,8 @@ export default function IdeView() {
       // browser-scroll, browser-back, browser-forward, browser-reload, browser-read-request
       // sont dispatché directement comme CustomEvents dédiés par useLiveAPI / BrowserPanel
     };
-    window.addEventListener('Leanna-ide-action', handle as EventListener);
-    return () => window.removeEventListener('Leanna-ide-action', handle as EventListener);
+    window.addEventListener('Leanna-action', handle as EventListener);
+    return () => window.removeEventListener('Leanna-action', handle as EventListener);
   }, []);
 
   // ── Documents riches pilotés par Leanna via Leanna-open-rich-document ──────
@@ -901,7 +901,7 @@ export default function IdeView() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="Leanna-ide-shell flex h-full" style={{ backgroundColor: 'var(--ide-shell-bg)', color: 'var(--text-primary)', width: showChat && chatDocked ? `calc(100% - ${chatWidth}px)` : '100%', transition: 'width 0.3s cubic-bezier(0.22, 1, 0.36, 1)' }}>
+    <div className="Leanna-shell flex h-full" style={{ backgroundColor: 'var(--ide-shell-bg)', color: 'var(--text-primary)', width: showChat && chatDocked ? `calc(100% - ${chatWidth}px)` : '100%', transition: 'width 0.3s cubic-bezier(0.22, 1, 0.36, 1)' }}>
 
       {/* Sidebar — nouvelle GlobalSidebar en mode IDE (outils-panneaux) */}
       <GlobalSidebar
@@ -1037,7 +1037,7 @@ export default function IdeView() {
       )}
 
       {/* Editor Area */}
-      <div className="Leanna-ide-workspace flex flex-1 flex-col min-w-0 min-h-0 relative">
+      <div className="Leanna-workspace flex flex-1 flex-col min-w-0 min-h-0 relative">
         {/* Tab Bar — masqué quand un panneau plein-écran est actif */}
         {!showSandbox && !showHistory && !showAutomation && !showMemory && !showKnowledge && !showNotebooks && !(showBrowser && !fileSystem.activePath) && (
           <EditorTabs

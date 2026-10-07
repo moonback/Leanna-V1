@@ -261,13 +261,13 @@ function IdeNavigationBridge() {
           navigate('/ide');
         }
         if (typeof detail.path === 'string') {
-          sessionStorage.setItem('Leanna-ide-pending-file', JSON.stringify({
+          sessionStorage.setItem('Leanna-pending-file', JSON.stringify({
             path: detail.path,
             line: detail.line,
             column: detail.column,
           }));
           setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('Leanna-ide-open-file', {
+            window.dispatchEvent(new CustomEvent('Leanna-open-file', {
               detail: { path: detail.path, line: detail.line, column: detail.column },
             }));
           }, 300);
@@ -280,16 +280,16 @@ function IdeNavigationBridge() {
           navigate('/ide');
         }
         setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('Leanna-ide-file-changed', {
+          window.dispatchEvent(new CustomEvent('Leanna-file-changed', {
             detail: { path: detail.path },
           }));
         }, 300);
       }
     };
 
-    window.addEventListener('Leanna-ide-action', handleAction as EventListener);
+    window.addEventListener('Leanna-action', handleAction as EventListener);
     return () => {
-      window.removeEventListener('Leanna-ide-action', handleAction as EventListener);
+      window.removeEventListener('Leanna-action', handleAction as EventListener);
       window.removeEventListener('Leanna-user-nav', handleNavClick);
     };
   }, [navigate, location.pathname]);
