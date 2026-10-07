@@ -17,6 +17,7 @@ import { CriticalEditConfirm } from './components/CriticalEditConfirm.js';
 import { MissionCreatedPrompt } from './components/MissionCreatedPrompt.js';
 import { StartupProjectModal } from './components/StartupProjectModal.js';
 import { LauncherModal } from './components/LauncherModal.js';
+import { EnvSetupModal } from './components/EnvSetupModal.js';
 import { useProfile } from './context/UserProfileContext.js';
 import { useAgentEventStream } from './hooks/useAgentEventStream.js';
 import { Loader2, X } from 'lucide-react';
@@ -713,6 +714,8 @@ function Layout() {
         <StartupProjectModal />
         {/* Écran de choix IDE / Notebook affiché après le splash */}
         <LauncherModal />
+        {/* Assistant de première configuration des clés .env (après le splash) */}
+        <EnvSetupModal />
       </ScreenShareProvider>
     </LiveAPIContext.Provider>
   );

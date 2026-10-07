@@ -60,12 +60,13 @@ function startBackendServer() {
         // Extraire les noms de clés déjà présents dans le fichier utilisateur
         const existingKeys = new Set(
           existing.split('\n')
-            .map(l => l.match(/^([A-Z_][A-Z0-9_]*)=/)?.[1])
+            .map(l => l.match(/^([A-Za-z_][A-Za-z0-9_]*)=/)?.[1])
             .filter(Boolean)
         );
         // Collecter les lignes de .env.example dont la clé est absente
+        // (regex insensible à la casse : couvre Leanna_*, VITE_* avec minuscules)
         const linesToAdd = example.split('\n').filter(line => {
-          const key = line.match(/^([A-Z_][A-Z0-9_]*)=/)?.[1];
+          const key = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=/)?.[1];
           return key && !existingKeys.has(key);
         });
         if (linesToAdd.length > 0) {

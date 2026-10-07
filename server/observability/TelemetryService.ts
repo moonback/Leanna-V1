@@ -14,6 +14,7 @@ import { resourceFromAttributes } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { BatchSpanProcessor, ConsoleSpanExporter } from '@opentelemetry/sdk-trace-base';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { getEnv } from '../config/env.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -112,8 +113,8 @@ export class TelemetryService {
     // OTel SDK v2 API: span processors are passed via the constructor
     // (addSpanProcessor was removed), and resources are built with
     // resourceFromAttributes (the Resource class constructor was removed).
-    const exportSpans = process.env.OTEL_CONSOLE_EXPORT === '1'
-      || process.env.OTEL_CONSOLE_EXPORT === 'true';
+    const otelConsoleExport = getEnv().OTEL_CONSOLE_EXPORT;
+    const exportSpans = otelConsoleExport === '1' || otelConsoleExport === 'true';
 
     this.provider = new NodeTracerProvider({
       resource: resourceFromAttributes({
@@ -138,8 +139,9 @@ export class TelemetryService {
   }
 
   private initSupabase(): void {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const env = getEnv();
+    const url = env.SUPABASE_URL;
+    const key = env.SUPABASE_SERVICE_ROLE_KEY;
     
     if (url && key) {
       this.supabase = createClient(url, key);

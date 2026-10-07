@@ -269,17 +269,34 @@ export function BrowserPanel({
   // ── Zoom (sur l'onglet actif) ───────────────────────────────────────────────
   // Niveau de zoom Electron : 0 = 100 %, chaque pas ≈ +20 %. On borne [-3, +3].
   const [zoomLevel, setZoomLevel] = useState(0);
+  /**
+   * Applique le zoom au webview de façon défensive.
+   * Un <webview> Electron lève une exception synchrone (« The WebView must be
+   * attached to the DOM and the dom-ready event emitted… ») si on appelle
+   * setZoomLevel avant que son WebContents soit prêt. On avale l'erreur pour
+   * ne pas faire planter l'arbre React (cette méthode est appelée depuis des
+   * effets au montage / changement d'onglet).
+   */
+  const safeSetZoomLevel = useCallback((level: number) => {
+    const wv = webviewRef.current;
+    if (!wv) return;
+    try {
+      wv.setZoomLevel(level);
+    } catch {
+      // Webview pas encore attachée / dom-ready pas émis : ignoré.
+    }
+  }, []);
   const applyZoom = useCallback((level: number) => {
     const clamped = Math.max(-3, Math.min(3, level));
     setZoomLevel(clamped);
-    webviewRef.current?.setZoomLevel(clamped);
-  }, []);
+    safeSetZoomLevel(clamped);
+  }, [safeSetZoomLevel]);
   const handleZoomIn = useCallback(() => applyZoom(zoomLevel + 0.5), [applyZoom, zoomLevel]);
   const handleZoomOut = useCallback(() => applyZoom(zoomLevel - 0.5), [applyZoom, zoomLevel]);
   const handleZoomReset = useCallback(() => applyZoom(0), [applyZoom]);
   // Réappliquer le zoom courant quand on change d'onglet (chaque webview a son propre zoom).
   useEffect(() => {
-    webviewRef.current?.setZoomLevel(zoomLevel);
+    safeSetZoomLevel(zoomLevel);
   }, [activeTabId]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Pourcentage affiché (approximation : 1,2^niveau). */
   const zoomPercent = Math.round(Math.pow(1.2, zoomLevel) * 100);

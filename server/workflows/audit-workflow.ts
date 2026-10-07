@@ -12,6 +12,7 @@
  */
 
 import { createWorkflow, listWorkflows, type WorkflowDefinition } from "../skills/workflow.js";
+import { getEnv } from "../config/env.js";
 
 const AUDIT_WORKFLOW_NAME = "audit-codebase-periodique";
 
@@ -122,8 +123,9 @@ export async function ensureAuditWorkflow(): Promise<WorkflowDefinition | null> 
     }
 
     // 2. Vérification en BDD (protection contre race condition au démarrage)
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const auditEnv = getEnv();
+    const supabaseUrl = auditEnv.SUPABASE_URL;
+    const supabaseKey = auditEnv.SUPABASE_SERVICE_ROLE_KEY;
     if (supabaseUrl && supabaseKey) {
       const supabase = createClient(supabaseUrl, supabaseKey);
       const { data, error } = await supabase

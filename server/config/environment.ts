@@ -1,74 +1,50 @@
-const BOOLEAN_VARIABLES = [
-  "ENABLE_CHAIN_OF_THOUGHT",
-  "FORCE_TIERED_TOOLS",
-  "SELF_HEAL_READONLY",
-  "ALLOW_FTP_PRIVATE_IPS",
-] as const;
+import { parseEnv } from "./env.js";
 
-const URL_VARIABLES = ["APP_URL", "SUPABASE_URL", "REDIS_URL"] as const;
-
-function isSet(value: string | undefined): boolean {
-  return value !== undefined && value.trim() !== "";
-}
-
-function isValidUrl(value: string, protocols: string[]): boolean {
-  try {
-    const url = new URL(value);
-    return protocols.includes(url.protocol);
-  } catch {
-    return false;
-  }
-}
-
-export function validateEnvironment(environment: NodeJS.ProcessEnv = process.env): void {
+/**
+ * Validation stricte des variables d'environnement (Phase 3).
+ *
+ * La validation de format (URL, booléen, enum, entier, longueur…) est déléguée
+ * au schéma zod {@link parseEnv} (voir `server/config/env.ts`). Cette fonction
+ * conserve son ancienne signature `(environment) => void` et y ajoute la seule
+ * règle inter-champs qui ne peut pas être exprimée par le schéma : les deux
+ * variables Supabase serveur doivent être définies ensemble (ou aucune).
+ *
+ * En cas d'erreur, une `Error` est levée avec un message agrégé lisible.
+ */
+export function validateEnvironment(
+  environment: NodeJS.ProcessEnv = process.env,
+): void {
   const errors: string[] = [];
 
+  // Règle inter-champs : SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY vont par paire.
   const supabaseUrl = environment.SUPABASE_URL?.trim();
   const supabaseKey = environment.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (isSet(supabaseUrl) !== isSet(supabaseKey)) {
-    errors.push("SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY doivent être définies ensemble.");
-  }
-  if (isSet(supabaseUrl) && !isValidUrl(supabaseUrl!, ["http:", "https:"])) {
-    errors.push("SUPABASE_URL doit être une URL HTTP(S) valide.");
+  const hasUrl = supabaseUrl !== undefined && supabaseUrl !== "";
+  const hasKey = supabaseKey !== undefined && supabaseKey !== "";
+  if (hasUrl !== hasKey) {
+    errors.push(
+      "SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY doivent être définies ensemble.",
+    );
   }
 
-  for (const variable of URL_VARIABLES) {
-    const value = environment[variable]?.trim();
-    if (!isSet(value)) continue;
-    const protocols = variable === "REDIS_URL" ? ["redis:", "rediss:"] : ["http:", "https:"];
-    if (!isValidUrl(value!, protocols)) {
-      errors.push(`${variable} doit être une URL ${variable === "REDIS_URL" ? "Redis" : "HTTP(S)"} valide.`);
+  // Validation de format déléguée à zod.
+  try {
+    parseEnv(environment);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // Retire le préfixe de parseEnv pour ne pas le dupliquer ; on ne garde que
+    // les lignes `- NOM: raison`.
+    for (const line of message.split("\n")) {
+      const trimmed = line.replace(/^-\s*/, "").trim();
+      if (trimmed && !trimmed.startsWith("Configuration d'environnement")) {
+        errors.push(trimmed);
+      }
     }
-  }
-
-  for (const variable of BOOLEAN_VARIABLES) {
-    const value = environment[variable]?.trim().toLowerCase();
-    if (value && value !== "true" && value !== "false") {
-      errors.push(`${variable} doit valoir "true" ou "false".`);
-    }
-  }
-
-  const ttl = environment.LEANNA_KNOWLEDGE_CACHE_TTL_SECONDS?.trim();
-  if (isSet(ttl) && (!/^\d+$/.test(ttl!) || Number(ttl) < 1)) {
-    errors.push("LEANNA_KNOWLEDGE_CACHE_TTL_SECONDS doit être un entier positif.");
-  }
-
-  const sandboxExitCode = environment.SANDBOX_EXIT_CODE?.trim();
-  if (isSet(sandboxExitCode) && !/^\d{6}$/.test(sandboxExitCode!)) {
-    errors.push("SANDBOX_EXIT_CODE doit contenir exactement 6 chiffres.");
-  }
-
-  const logLevel = environment.LOG_LEVEL?.trim().toLowerCase();
-  if (logLevel && !["debug", "info", "warn", "error"].includes(logLevel)) {
-    errors.push('LOG_LEVEL doit valoir "debug", "info", "warn" ou "error".');
-  }
-
-  const nodeEnvironment = environment.NODE_ENV?.trim().toLowerCase();
-  if (nodeEnvironment && !["development", "production", "test"].includes(nodeEnvironment)) {
-    errors.push('NODE_ENV doit valoir "development", "production" ou "test".');
   }
 
   if (errors.length > 0) {
-    throw new Error(`Configuration d'environnement invalide :\n- ${errors.join("\n- ")}`);
+    throw new Error(
+      `Configuration d'environnement invalide :\n- ${errors.join("\n- ")}`,
+    );
   }
 }

@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { MissionState } from "./types.js";
+import { getEnv } from "../config/env.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MissionStore — Persistance des missions dans Supabase
@@ -24,8 +25,9 @@ export class MissionStore {
   private tableMissingLogged = false;
 
   constructor() {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const env = getEnv();
+    const url = env.SUPABASE_URL;
+    const key = env.SUPABASE_SERVICE_ROLE_KEY;
     if (url && key) {
       try {
         this.client = createClient(url, key);

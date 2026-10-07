@@ -16,7 +16,7 @@
 
 # 🧠 LEANNA
 
-**Environnement d'exécution d'agent IA autonome**
+**Environnement d'exécution d'agents IA autonomes, local-first**
 
 <br>
 
@@ -24,7 +24,9 @@
 
 <br>
 
-<sub>Un agent IA natif pour le bureau, conçu pour transformer des objectifs en actions exécutables, observables et vérifiables.</sub>
+<sub>Le projet Leanna est une plateforme desktop local-first dédiée à l’exécution d’agents IA autonomes, structurée autour d’un cycle de compréhension, planification, exécution, observation, vérification et récupération.
+
+Rien ne quitte la machine sans action explicite. Chaque action à effet de bord traverse une chaîne d'autorisation (permissions, sandbox, dry-run, Safety Gate Jev, approbations). Le succès n'est jamais déclaré par un modèle : il est prouvé par l'état du workspace.</sub>
 
 <br><br>
 
@@ -82,11 +84,13 @@
 | ✨ | [Ce que Leanna peut faire](#-ce-que-leanna-peut-faire) | ⚙️ | [Modes d'autonomie](#modes-dautonomie) |
 | 🔄 | [Boucle d'exécution autonome](#la-boucle-dexécution-autonome) | 📦 | [Bac à sable](#bac-à-sable-et-exécution-sûre) |
 | 🧠 | [Cerveau de l'agent](#cerveau-de-lagent-agent-brain) | 🧪 | [Exécution à blanc](#exécution-à-blanc-dry-run) |
-| ⚡ | [Runtime de l'agent](#runtime-de-lagent) | 🛑 | [Protection injection prompt](#protection-contre-linjection-de-prompt) |
+| ⚡ | [Runtime de l'agent](#runtime-de-lagent) | 🔪 | [Kill-switch temps-réel](#kill-switch-temps-réel-abortsignal) |
+| | | ♻️ | [Idempotence et reprise](#idempotence-et-reprise-sûre-après-crash-executionledger) |
+| | | 🛑 | [Protection injection prompt](#protection-contre-linjection-de-prompt) |
 | 🎯 | [Système de missions](#système-de-missions) | 👁️ | [Observabilité](#observabilité) |
 | 📊 | [Estimation avant exécution](#estimation-avant-exécution) | 🖥️ | [Environnement de bureau](#environnement-de-bureau) |
 | 🤖 | [Architecture multi-agents](#architecture-multi-agents) | 💻 | [IDE et espace de travail](#ide-et-espace-de-travail) |
-| 🔧 | [Outils et compétences](#outils-et-compétences) | 🌐 | [Automatisation navigateur](#automatisation-du-navigateur) • [Navigateur intégré](#navigateur-intégré) |
+| 🔧 | [Outils et compétences](#outils-et-compétences) • [Attribution déterministe](#attribution-déterministe-outil--agent) • [Skills tiers isolés](#exécution-isolée-des-skills-tiers-skillworker) | 🌐 | [Automatisation navigateur](#automatisation-du-navigateur) • [Navigateur intégré](#navigateur-intégré) |
 | 📚 | [Connaissance et compréhension](#connaissance-et-compréhension) | 🔀 | [Git et GitHub](#git-et-github) |
 | 🧠 | [Architecture de la mémoire](#architecture-de-la-mémoire) | 📓 | [Notebooks et RAG](#-notebooks-et-rag) |
 | 📈 | [Apprentissage et fiabilité](#apprentissage-et-fiabilité) | 🎙️ | [Assistant vocal notebook](#-assistant-vocal-du-notebook) |
@@ -917,6 +921,97 @@ Ces métadonnées deviennent importantes pour :
 * la sélection d'outils ;
 * les contrôles de sécurité.
 
+---
+
+# Attribution déterministe outil → agent
+
+Chaque outil du registre doit être rattaché de façon **déterministe** à un agent
+propriétaire, plutôt que routé par simple heuristique au moment de l'appel. Un
+audit de boot vérifie cette chaîne et peut faire échouer le démarrage si un outil
+n'est pas attribué.
+
+Composant :
+
+```text
+server/agents/attributionAudit.ts
+```
+
+Le mode est piloté par la variable d'environnement
+`Leanna_ATTRIBUTION_ENFORCEMENT` :
+
+```text
+off      audit désactivé
+warn     journalise les outils non attribués, sans bloquer (défaut)
+strict   lève UnattributedToolsError et fait échouer le boot
+```
+
+```env
+# off | warn | strict
+Leanna_ATTRIBUTION_ENFORCEMENT="strict"
+```
+
+Un audit symétrique, `server/agents/capabilityAudit.ts`
+(`Leanna_CAPABILITY_ENFORCEMENT`), vérifie au boot que les capacités déclarées
+par les agents correspondent aux outils réellement enregistrés — ce qui évite les
+boucles de retry stériles sur un outil manquant. En mode `strict`, le
+désalignement devient une erreur de boot plutôt qu'un échec découvert en pleine
+mission.
+
+---
+
+# Exécution isolée des skills tiers (SkillWorker)
+
+Les skills/agents tiers (plugins `*.agent.js`) ne s'exécutent pas dans le process
+principal : ils sont lancés dans un **Worker thread** (isolat V8 distinct) via le
+`SkillWorker`.
+
+Composants pertinents :
+
+```text
+server/runtime/SkillWorker.ts        Exécution isolée via worker_threads
+server/security/agentDefinitionSchema.ts   Validation du manifeste d'agent
+server/agents/AgentLoader.ts         Chargement + signature des agents dynamiques
+```
+
+Le modèle d'isolation :
+
+```text
+Main thread                     Worker thread (isolat V8)
+───────────────────             ─────────────────────────
+runPluginInWorker()             workerEntrypoint()
+  ├─ spawn Worker                 ├─ importe le plugin
+  ├─ envoie { execute, ctx }      ├─ appelle plugin.execute(ctx, proxy)
+  ├─ attend le résultat           └─ chaque appel d'outil → postMessage
+  └─ proxyToolCall(name, args)
+      ├─ valide la capability
+      └─ délègue au ToolRegistry principal
+```
+
+Garanties de sécurité :
+
+* **isolation mémoire** — le plugin ne peut ni lire ni modifier la mémoire du
+  process principal ;
+* **capability enforcement** — chaque appel d'outil est intercepté et rejeté si
+  l'outil ne figure pas dans la liste `allowedCapabilities` ; un plugin ne peut
+  pas élever ses propres privilèges ;
+* **timeout strict** — un `AbortController` termine le Worker au-delà de
+  `maxDurationMs` (défaut 30 s), empêchant tout blocage indéfini du runtime ;
+* **surface minimale** — seuls des messages JSON-sérialisables transitent entre
+  les threads ; aucune référence objet partagée n'est exposée ;
+* **pas d'accès direct au ToolRegistry** — le plugin ne reçoit qu'un proxy qui
+  relaie chaque appel au main thread, lequel valide puis exécute.
+
+L'isolation est activable via `.env` :
+
+```env
+# Allowlist de plugins (JSON : { "mon_agent.agent.js": "<sha256>" }).
+LEANNA_PLUGIN_ALLOWLIST=""
+# Exécution sandboxée via worker_threads.
+LEANNA_PLUGIN_SANDBOX="true"
+# Secret HMAC (≥ 32 caractères) pour signer les agents dynamiques.
+LEANNA_AGENT_SECRET=""
+```
+
 <br><img src="https://raw.githubusercontent.com/andreasbm/readme/master/assets/lines/rainbow.png" alt="separator" width="100%"><br>
 
 ## 📚 Connaissance et compréhension
@@ -1113,6 +1208,45 @@ Sélection future d'outils
 Un outil ayant échoué de façon répétée peut donc être déprioriser lors des planifications futures.
 
 Cela crée une boucle de rétroaction à travers les missions.
+
+## Amorçage cross-mission (seedFromReliability)
+
+La boucle d'apprentissage ne se limite pas à la mission en cours : le signal de
+fiabilité est **durable et partagé entre les missions**.
+
+```text
+server/knowledge/StrategyMemory.ts   Store durable par workspace (.Leanna-strategy.json)
+server/mission/SkillScorer.ts         Scoring + amorçage
+```
+
+Le `StrategyMemory` persiste par workspace, en JSON atomique (`tmp` + `rename`),
+avec *decay* et *prune*. Aucun secret ni payload n'y est stocké — uniquement des
+compteurs compacts (succès, échecs, durées). En cas d'erreur d'E/S, il dégrade
+proprement en mémoire seule sans jamais faire échouer la boucle.
+
+Le cycle complet s'étend donc sur plusieurs missions :
+
+```text
+Mission N
+  exécution d'outil
+      ↓
+  SkillScorer.recordUsage  +  StrategyMemory.recordSkillOutcome   (JSON durable)
+
+Mission N+1
+  startMission
+      ↓
+  SkillScorer.seedFromReliability( StrategyMemory.getAllStats() )
+      ↓
+  Planner.decompose  ←  avertissements « failing-skill » (getFailingSkills)
+```
+
+Au démarrage d'une mission, `SkillScorer.seedFromReliability()` amorce l'historique
+de scoring à partir du store durable : un outil historiquement défaillant est
+déprioritisé **dès la première planification**, sans attendre un échec re-observé.
+Les observations vivantes de la mission priment ensuite — l'amorçage ne touche que
+les skills encore vierges pour la session. En complément,
+`AutonomousExecutive.recallOutcome()` peut escalader la stratégie après plusieurs
+échecs de la même classe.
 
 ---
 
@@ -1555,6 +1689,90 @@ L'exécution à blanc est particulièrement utile pour :
 * évaluer la sélection d'outils ;
 * valider des workflows ;
 * tester en toute sécurité des missions autonomes.
+
+---
+
+# Kill-switch temps-réel (AbortSignal)
+
+En plus du budget par action, le runtime prend en charge une **annulation
+temps-réel** : un `AbortSignal` est propagé jusqu'au `ToolRegistry` et jusqu'au
+handler d'outil.
+
+```text
+server/runtime/ToolRegistry.ts   ToolCallOptions.signal?: AbortSignal
+```
+
+Le comportement :
+
+```text
+Appel d'outil (options.signal)
+      │
+   signal déjà déclenché ?
+      ├── oui → court-circuit : ni cache, ni simulation, ni exécution
+      │
+      └── non → exécution
+                 │
+            signal déclenché pendant l'exécution ?
+                 ↓
+            call() se résout en erreur SANS attendre la fin du handler ;
+            le handler coopératif reçoit le même signal et libère ses ressources
+```
+
+Deux propriétés importantes :
+
+* une annulation **ne se retente jamais** — le kill-switch est immédiat et
+  définitif pour cet appel ;
+* l'arrêt par annulation (`ToolAbortedError`) est **distinct** d'un timeout
+  (`ToolTimeoutError`) : ici l'arrêt est volontaire.
+
+Cela complète le kill-switch *par action* (vérification de budget en tête de
+`Executor.executeAction`) par une interruption qui agit **pendant** une action
+longue, et non uniquement entre deux actions.
+
+---
+
+# Idempotence et reprise sûre après crash (ExecutionLedger)
+
+Un crash survenant **après** un effet de bord (écriture fichier, appel
+GitHub/FTP/shell…) mais **avant** l'enregistrement du résultat pourrait conduire à
+rejouer l'action à la reprise. Pour une action destructive, c'est inacceptable.
+
+La garde d'idempotence s'appuie sur un **journal append-only, durable et local** :
+
+```text
+server/core/ExecutionLedger.ts   Journal .Leanna/core/ledger/actions.jsonl
+```
+
+Chaque action reçoit une `idempotencyKey` déterministe
+(`missionId:stepId:tool:argsHash`, l'empreinte des arguments étant un SHA-256
+stable à clés triées). Avant d'exécuter, le ledger décide :
+
+```text
+begin(action)
+   │
+   ├── clé déjà « completed »              → skip  (retourne le résultat mémorisé)
+   │
+   ├── clé « started » orpheline (crash)
+   │     └── l'action a un effet de bord   → block (rejeu interdit)
+   │     └── sans effet de bord            → execute
+   │
+   └── inédite / « failed »                → execute, puis complete/fail
+```
+
+À la reprise, les entrées `started` sans terminaison sont considérées comme
+interrompues par un crash (statut `unknown`) et ne sont **pas rejouées
+aveuglément** si l'action porte un effet de bord. Le ledger ne connaît pas les
+outils : l'appelant fournit le flag `sideEffect`, dérivé des permissions de
+l'outil (`write` / `exec` / `network` / `dangerous`).
+
+La garde est branchée sur le point de passage unique des outils (`ToolRegistry`)
+via un hook optionnel : aucun outil n'est impacté si le ledger n'est pas
+configuré. Elle s'active via `.env` :
+
+```env
+# Idempotence (ledger d'exécution + reprise sûre après crash).
+LEANNA_IDEMPOTENCY="false"
+```
 
 ---
 
