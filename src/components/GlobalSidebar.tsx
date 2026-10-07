@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import type { LucideIcon } from 'lucide-react';
 import {
   LayoutDashboard, Milestone, FlaskConical, Network, HelpCircle, Gauge,
@@ -172,36 +172,53 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
         </button>
       </div>
 
-      
-
-      {/* Agent status pill */}
-       {mode === 'ide' && (
-      <button
-        type="button"
-        onClick={() => navigate('/mission-control')}
-        aria-label={`État de Leanna : ${agent.label}. Ouvrir Mission Control.`}
-        className="mx-2 mb-2 flex items-center gap-2 rounded-md px-2 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
-        style={{ backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-base)' }}
-      >
-        <span className="relative flex h-2 w-2 flex-shrink-0 items-center justify-center" aria-hidden>
-          {agent.active && !reduceMotion && (
-            <motion.span
-              className="absolute inline-flex h-full w-full rounded-full"
-              style={{ backgroundColor: agent.color }}
-              animate={{ opacity: [0.6, 0, 0.6], scale: [1, 2.2, 1] }}
-              transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-            />
-          )}
-          <span className="relative inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: agent.color }} />
-        </span>
-        {!collapsed && (
-          <span className="min-w-0 flex-1 text-left">
-            <span className="block truncate text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{agent.label}</span>
-            <span className="block truncate text-xs" style={{ color: 'var(--text-muted)' }}>{agent.reason}</span>
+      {/* Pastille d'état de l'agent — clic = retour à Mission Control.
+          Sert aussi de bascule IDE → Mission Control (plus de bouton redondant). */}
+      {mode === 'ide' && (
+        <button
+          type="button"
+          onClick={() => navigate('/mission-control')}
+          title="Ouvrir Mission Control"
+          aria-label={`État de Leanna : ${agent.label}. Ouvrir Mission Control.`}
+          className="mx-2 mb-2 flex items-center gap-2 rounded-md px-2 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
+          style={{ backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-base)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-panel)'; }}
+        >
+          <span className="relative flex h-2 w-2 flex-shrink-0 items-center justify-center" aria-hidden>
+            {agent.active && !reduceMotion && (
+              <motion.span
+                className="absolute inline-flex h-full w-full rounded-full"
+                style={{ backgroundColor: agent.color }}
+                animate={{ opacity: [0.6, 0, 0.6], scale: [1, 2.2, 1] }}
+                transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            )}
+            <span className="relative inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: agent.color }} />
           </span>
-        )}
-      </button>
-       )}
+          {!collapsed && (
+            <span className="min-w-0 flex-1 text-left">
+              <span className="block truncate text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{agent.label}</span>
+              <span className="block truncate text-xs" style={{ color: 'var(--text-muted)' }}>{agent.reason}</span>
+              {/* Barre de progression — affichée quand une mission expose un pourcentage. */}
+              {typeof agent.progress === 'number' && (
+                <span className="mt-1 block h-0.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: 'var(--border-base)' }} aria-hidden>
+                  <span
+                    className="block h-full rounded-full"
+                    style={{
+                      width: `${Math.round(Math.min(1, Math.max(0, agent.progress)) * 100)}%`,
+                      backgroundColor: agent.color,
+                      transition: reduceMotion ? undefined : 'width 0.3s ease',
+                    }}
+                  />
+                </span>
+              )}
+            </span>
+          )}
+          <ArrowLeft size={13} className="flex-shrink-0" style={{ color: 'var(--text-dimmed)' }} aria-hidden />
+        </button>
+      )}
+
       {/* Assistant connect/mute block — parité IDE (mode="ide" uniquement) */}
       {mode === 'ide' && (
         <IdeAssistantBlock
@@ -217,22 +234,7 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
           onToggleMode={props.onToggleMode}
         />
       )}
-{/* Bascule IDE ↔ Mission Control (mode IDE uniquement) */}
-      {mode === 'ide' && (
-        <button
-          type="button"
-          onClick={() => navigate('/mission-control')}
-          title="Ouvrir Mission Control"
-          aria-label="Revenir à Mission Control"
-          className="mx-2 mb-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
-          style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-secondary)', border: '1px solid var(--border-base)' }}
-          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-panel)'; }}
-        >
-          <ArrowLeft size={14} className="flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
-          {!collapsed && <span className="truncate">Mission Control</span>}
-        </button>
-      )}
+
       {/* Grouped navigation (global routes) or tools (IDE) */}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {mode === 'ide' ? (
@@ -410,14 +412,13 @@ function NavButton({ item, active, collapsed, onClick, disabled = false }: { ite
         {!collapsed && <span className="truncate text-sm font-medium">{item.label}</span>}
       </button>
       {collapsed && (
-        <AnimatePresence>
-          <motion.span
-            className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium opacity-0 shadow-lg group-hover:opacity-100"
-            style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-primary)', border: '1px solid var(--border-base)' }}
-          >
-            {item.label}
-          </motion.span>
-        </AnimatePresence>
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100"
+          style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-primary)', border: '1px solid var(--border-base)' }}
+        >
+          {item.label}
+        </span>
       )}
     </div>
   );
