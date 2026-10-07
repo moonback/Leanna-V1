@@ -45,6 +45,15 @@ function validateSupabaseEnvironment(): void {
   process.stdout.write("[Bootstrap] Configuration Supabase validée.\n");
 }
 
+// En production/Electron, l'exe lance ce bootstrap DANS le process principal
+// Electron (require('dist/server.cjs')). Un process.exit() ici fermerait toute
+// l'application → fenêtre vide. On démarre donc le serveur même si le .env est
+// incomplet : l'UI s'affiche et l'assistant EnvSetupModal guide la saisie des
+// clés. En développement (process dédié), on garde l'échec strict et visible.
+const isEmbedded =
+  process.env.NODE_ENV === "production" ||
+  Boolean(process.env.ELECTRON_APP_PATH);
+
 try {
   validateEnvironment();
   validateSupabaseEnvironment();
@@ -54,9 +63,22 @@ try {
   process.stdout.write("[Bootstrap] Variables d'environnement validées.\n");
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`[Bootstrap] Échec de validation de la configuration :\n${message}\n`);
-  process.exitCode = 1;
-  process.exit();
+  if (isEmbedded) {
+    // Non fatal : on logue et on continue. Les clés manquantes/invalides seront
+    // renseignées via l'UI (/api/env + EnvSetupModal).
+    process.stderr.write(
+      `[Bootstrap] Configuration d'environnement incomplète (démarrage en mode dégradé) :\n${message}\n`,
+    );
+    // Amorce malgré tout le cache de config pour que getEnv() ne relève pas
+    // l'erreur plus tard dans le process (lecture paresseuse). Si le parse
+    // échoue encore, on l'ignore : les accès ultérieurs retomberont sur un
+    // nouveau parse (toujours tolérant aux clés optionnelles vides).
+    try { loadEnv(); } catch { /* config toujours incomplète : toléré */ }
+  } else {
+    process.stderr.write(`[Bootstrap] Échec de validation de la configuration :\n${message}\n`);
+    process.exitCode = 1;
+    process.exit();
+  }
 }
 
 void import("./server.js").catch((error) => {
