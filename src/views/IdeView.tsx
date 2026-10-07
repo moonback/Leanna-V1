@@ -164,7 +164,7 @@ export default function IdeView() {
   });
 
   // UI State
-  const [showExplorer, setShowExplorer] = useState(true);
+  const [showExplorer, setShowExplorer] = useState(false);
   const [explorerWidth, setExplorerWidth] = useState(() => getExplorerWidth());
   const [showDiffViewer, setShowDiffViewer] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState<'files' | 'commands' | null>(null);
