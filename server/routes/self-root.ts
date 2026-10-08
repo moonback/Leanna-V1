@@ -2,7 +2,6 @@ import { Router, Request, Response } from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import { z } from 'zod';
 import { requestConfirmation } from '../utils/confirmationBridge.js';
-import { broadcastKnowledgeProgress } from '../utils/knowledgeBroadcaster.js';
 
 export function createSelfRootRouter(
   getWss: () => WebSocketServer | null,
@@ -226,27 +225,15 @@ export function createSelfRootRouter(
       }
       addOrUpdateWorkspace(newRoot, siteUrl || undefined, customName);
 
-      // 3. Recharger et réindexer le Knowledge System pour le nouveau projet
+      // 3. Recharger et réindexer le Knowledge System pour le nouveau projet.
+      // Séquence COMPLÈTE partagée avec le démarrage : charge graphe/mémoire,
+      // scanne, arme l'indexation incrémentale (FileWatcher), extrait les
+      // documents du workspace et arme leur watcher. Auparavant seule la moitié
+      // (load + scanAll) était faite ici : le graphe se figeait après le scan
+      // et les documents n'étaient jamais indexés en session normale.
       try {
-        const { knowledgeGraph } = await import('../knowledge/KnowledgeGraph.js');
-        const { projectMemory } = await import('../knowledge/ProjectMemory.js');
-        const { projectIndexer } = await import('../knowledge/ProjectIndexer.js');
-        const { projectProfile } = await import('../knowledge/ProjectProfile.js');
-        knowledgeGraph.load();
-        projectMemory.load();
-        // Load this project's intelligence profile immediately so Leanna "never
-        // starts from zero"; refresh again after indexing enriches the knowledge.
-        try { projectProfile.refresh(); } catch { /* best-effort */ }
-        projectIndexer.scanAll({
-          onProgress: (p) => broadcastKnowledgeProgress(p.phase, p.current, p.total, { file: p.file }),
-        }).then((stats: any) => {
-          broadcastKnowledgeProgress('done', stats.totalFiles, stats.totalFiles, {
-            totalEntities: stats.totalEntities,
-            durationMs: stats.durationMs,
-            cached: stats.cached ?? false,
-          });
-          try { projectProfile.refresh(); } catch { /* best-effort */ }
-        }).catch(() => {});
+        const { activateProjectKnowledge } = await import('../knowledge/activateProject.js');
+        activateProjectKnowledge();
         console.log(`[KnowledgeGraph] Rechargement pour: ${newRoot}`);
       } catch { /* silent */ }
 
@@ -335,22 +322,11 @@ export function createSelfRootRouter(
         setWorkspaceSiteUrl(siteUrl);
       }
 
-      // Recharger le Knowledge System pour le nouveau projet (vide)
+      // Recharger le Knowledge System pour le nouveau projet (vide).
+      // Séquence complète partagée avec le démarrage (scan + watchers + docs).
       try {
-        const { knowledgeGraph } = await import('../knowledge/KnowledgeGraph.js');
-        const { projectMemory } = await import('../knowledge/ProjectMemory.js');
-        const { projectIndexer } = await import('../knowledge/ProjectIndexer.js');
-        knowledgeGraph.load();
-        projectMemory.load();
-        projectIndexer.scanAll({
-          onProgress: (p) => broadcastKnowledgeProgress(p.phase, p.current, p.total, { file: p.file }),
-        }).then((stats: any) => {
-          broadcastKnowledgeProgress('done', stats.totalFiles, stats.totalFiles, {
-            totalEntities: stats.totalEntities,
-            durationMs: stats.durationMs,
-            cached: stats.cached ?? false,
-          });
-        }).catch(() => {});
+        const { activateProjectKnowledge } = await import('../knowledge/activateProject.js');
+        activateProjectKnowledge();
       } catch { /* silent */ }
 
       notifyWorkspaceConnected();
@@ -522,20 +498,8 @@ export function createSelfRootRouter(
             sendLog(`📦 Sandbox READY: ${newRoot}`);
 
             try {
-              const { knowledgeGraph } = await import('../knowledge/KnowledgeGraph.js');
-              const { projectMemory }  = await import('../knowledge/ProjectMemory.js');
-              const { projectIndexer } = await import('../knowledge/ProjectIndexer.js');
-              knowledgeGraph.load();
-              projectMemory.load();
-              projectIndexer.scanAll({
-                onProgress: (p) => broadcastKnowledgeProgress(p.phase, p.current, p.total, { file: p.file }),
-              }).then((stats: any) => {
-                broadcastKnowledgeProgress('done', stats.totalFiles, stats.totalFiles, {
-                  totalEntities: stats.totalEntities,
-                  durationMs: stats.durationMs,
-                  cached: stats.cached ?? false,
-                });
-              }).catch(() => {});
+              const { activateProjectKnowledge } = await import('../knowledge/activateProject.js');
+              activateProjectKnowledge();
               sendLog(`🧠 Knowledge System rechargé.`);
             } catch { /* silent */ }
 
@@ -725,20 +689,8 @@ export function createSelfRootRouter(
             addOrUpdateWorkspace(newRoot, undefined, repoName);
 
             try {
-              const { knowledgeGraph } = await import('../knowledge/KnowledgeGraph.js');
-              const { projectMemory }  = await import('../knowledge/ProjectMemory.js');
-              const { projectIndexer } = await import('../knowledge/ProjectIndexer.js');
-              knowledgeGraph.load();
-              projectMemory.load();
-              projectIndexer.scanAll({
-                onProgress: (p) => broadcastKnowledgeProgress(p.phase, p.current, p.total, { file: p.file }),
-              }).then((stats: any) => {
-                broadcastKnowledgeProgress('done', stats.totalFiles, stats.totalFiles, {
-                  totalEntities: stats.totalEntities,
-                  durationMs: stats.durationMs,
-                  cached: stats.cached ?? false,
-                });
-              }).catch(() => {});
+              const { activateProjectKnowledge } = await import('../knowledge/activateProject.js');
+              activateProjectKnowledge();
               sendLog(`🧠 Knowledge System rechargé.`);
             } catch { /* silent */ }
 

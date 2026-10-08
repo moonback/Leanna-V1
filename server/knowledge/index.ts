@@ -24,6 +24,10 @@
 export { ProjectIndexer, projectIndexer } from "./ProjectIndexer.js";
 export { KnowledgeGraph, knowledgeGraph } from "./KnowledgeGraph.js";
 
+// Activation unifiée du Knowledge System (scan + watchers + extraction docs).
+// Source de vérité unique partagée par le démarrage et la connexion de workspace.
+export { activateProjectKnowledge, type ActivateProjectOptions } from "./activateProject.js";
+
 // AST Engine — Tree-sitter (WASM) + Call-graph
 export { ASTParser, astParser } from "./ASTParser.js";
 export {

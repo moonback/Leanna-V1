@@ -15,7 +15,7 @@ import { authenticateRequest, authenticateToken, ensureApiToken } from "./server
 import { SELF_ROOT, Leanna_APP_ROOT, initSelfRoot, hasProject } from "./server/utils/selfRoot.js";
 import { isSandboxActive, getSandboxRoot } from "./server/utils/sandbox.js";
 
-import { knowledgeGraph, projectIndexer, projectMemory } from "./server/knowledge/index.js";
+import { knowledgeGraph, projectMemory } from "./server/knowledge/index.js";
 
 import { loadGeminiKeys, createGeminiClient } from "./server/utils/geminiKeyPool.js";
 import { encrypt } from "./server/utils/crypto.js";
@@ -123,7 +123,7 @@ process.on('uncaughtException', (error) => {
   setTimeout(() => process.exit(1), 1000);
 });
 
-import { setKnowledgeBroadcaster, broadcastKnowledgeProgress } from "./server/utils/knowledgeBroadcaster.js";
+import { setKnowledgeBroadcaster } from "./server/utils/knowledgeBroadcaster.js";
 import { registerIdeActionBroadcaster } from "./server/utils/ideActionBroadcaster.js";
 
 // ─── Séquence de démarrage async ──────────────────────────────────────────────
@@ -159,37 +159,15 @@ import { registerIdeActionBroadcaster } from "./server/utils/ideActionBroadcaste
       });
     }
 
-    // 5. Indexation du Knowledge Graph — seulement si un projet est actif
+    // 5. Indexation du Knowledge Graph — seulement si un projet est actif.
+    // Séquence COMPLÈTE (scan → watcher incrémental → extraction documents →
+    // watcher documents) factorisée dans activateProjectKnowledge, partagée
+    // avec la connexion de workspace à chaud (routes/self-root.ts). Garantit
+    // qu'un projet activé par le sélecteur reçoit exactement le même traitement
+    // qu'un projet actif au démarrage.
     if (hasProject()) {
-      projectIndexer.scanAll({
-        onProgress: (p) => broadcastKnowledgeProgress(p.phase, p.current, p.total, { file: p.file }),
-      }).then((stats: any) => {
-        broadcastKnowledgeProgress('done', stats.totalFiles, stats.totalFiles, {
-          totalEntities: stats.totalEntities,
-          durationMs: stats.durationMs,
-          cached: stats.cached ?? false,
-        });
-        if (stats.cached) {
-          console.log(`[KnowledgeGraph] ⚡ Projet inchangé: ${stats.totalFiles} fichiers, ${stats.totalEntities} entités (chargé depuis le cache en ${stats.durationMs}ms)`);
-        } else {
-          console.log(`[KnowledgeGraph] ✅ Projet indexé: ${stats.totalFiles} fichiers, ${stats.totalEntities} entités (${(stats.durationMs / 1000).toFixed(1)}s)`);
-        }
-        // 5b. Activer l'indexation incrémentale via FileWatcher
-        projectIndexer.startWatching();
-
-        // 6. Extraction automatique des documents du workspace
-        import("./server/knowledge/WorkspaceIndexer.js").then(({ workspaceIndexer }) => {
-          workspaceIndexer.extractAll().then((docStats: any) => {
-            console.log(`[WorkspaceIndexer] ✅ ${docStats.totalExtracted} document(s) extrait(s), ${docStats.totalWords} mots, ${docStats.totalSections} sections (${(docStats.durationMs / 1000).toFixed(1)}s)`);
-            // 6b. Activer l'extraction incrémentale
-            workspaceIndexer.startWatching();
-          }).catch((e: any) => {
-            console.error('[WorkspaceIndexer] ❌ Erreur extraction:', e.message);
-          });
-        });
-      }).catch((e: any) => {
-        console.error('[KnowledgeGraph] ❌ Erreur indexation:', e.message);
-      });
+      const { activateProjectKnowledge } = await import("./server/knowledge/activateProject.js");
+      activateProjectKnowledge();
     } else {
       console.log('[KnowledgeGraph] ⏸️ Aucun projet actif — indexation différée.');
     }
@@ -304,12 +282,18 @@ const { runtime, skillManager, agentic } = bootstrapRuntimeSync({
     documentKnowledgeSkill, richDocumentSkill, imageGenerationSkill, graphifySkill, telegramSkill,
     createSmartSkills((name: string, args: any) => skillManager.handleToolCall(name, args)),
   ],
-  onReady: async (r, sm) => {
-    // Charger les custom skills après l'initialisation de base
+  beforeAudits: async (_r, sm) => {
+    // Charger les custom skills AVANT les audits de boot (attribution,
+    // audit déterministe fail-closed, réconciliation). Les enregistrer ici —
+    // et non dans onReady — garantit qu'ils sont comptés et audités comme
+    // n'importe quel autre outil : sans cela, l'audit tournait sur un total
+    // sous-évalué (anomalie 224 vs 228) et les custom skills échappaient au
+    // contrôle d'attribution.
     await sm.loadCustomSkills();
     const customSkillsReloadInterval = Number(process.env.LEANNA_CUSTOM_SKILLS_RELOAD_INTERVAL_MS ?? 30_000);
     sm.startCustomSkillsHotReload(Number.isFinite(customSkillsReloadInterval) ? customSkillsReloadInterval : 30_000);
-
+  },
+  onReady: async (r, sm) => {
     // ── Brancher les serveurs MCP à l'assistant ───────────────────────────────
     // 1) Connecter les serveurs configurés (.Leanna/mcp.json).
     // 2) Enregistrer la skill "mcp" pour exposer leurs outils au LLM.

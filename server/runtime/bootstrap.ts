@@ -62,6 +62,15 @@ export interface BootstrapConfig {
    * strictement inchangé.
    */
   enableIdempotency?: boolean;
+  /**
+   * Callback exécuté APRÈS `runtime.start()` mais AVANT les audits de boot
+   * (`applyAttributionAndAudits`). C'est le point d'enregistrement des outils
+   * tardifs (ex. custom skills Supabase) : ceux-ci DOIVENT être présents avant
+   * que l'attribution, l'audit déterministe (fail-closed) et la réconciliation
+   * ne tournent, sinon le total d'outils est sous-évalué et les custom skills
+   * échappent au contrôle d'attribution (cf. anomalie 224 vs 228).
+   */
+  beforeAudits?: (runtime: AgentRuntime, skillManager: SkillManagerV2) => void | Promise<void>;
   /** Callback post-initialisation */
   onReady?: (runtime: AgentRuntime, skillManager: SkillManagerV2) => void | Promise<void>;
 }
@@ -86,6 +95,68 @@ export interface BootstrapResult {
    * strictement inchangé.
    */
   kernel: CoreKernel;
+}
+
+/**
+ * Applique l'attribution d'outils, l'autorisation par agent et les audits de
+ * boot sur un runtime DÉJÀ démarré (tous les outils enregistrés).
+ *
+ * Partagé par `bootstrapRuntime` (async) et `bootstrapRuntimeSync` : garantit
+ * que les deux chemins produisent le même état d'attribution/autorisation. À
+ * appeler APRÈS `runtime.start()` et AVANT `onReady` (reconcileAndLogCounts y
+ * lit le cache d'attribution).
+ *
+ * - Étape attribution/autorisation : estampille `allowedAgents` + `risk` sur
+ *   les outils sensibles (PermissionPolicy) et alimente le cache d'affichage.
+ * - Étape audits : attribution (outils sans propriétaire) et capabilities
+ *   fantômes ; en mode "strict", relancent l'erreur pour échouer le boot.
+ *
+ * Toutes les erreurs non-strictes sont absorbées : best-effort, jamais bloquant
+ * en mode "warn" (défaut).
+ */
+async function applyAttributionAndAudits(runtime: AgentRuntime): Promise<void> {
+  // Attribution + autorisation par agent (socle sensible).
+  try {
+    const { applyToolRegistryAttribution, applyRuntimeAgentAuthorization } = await import(
+      "../agents/toolAgentMapper.js"
+    );
+    const defs = runtime.tools.getDefinitions();
+    // Estampille allowedAgents + risk sur les outils sensibles AVANT de calculer
+    // le cache d'affichage : la même vérité sert l'exécution (PermissionPolicy)
+    // et la télémétrie.
+    const stamped = applyRuntimeAgentAuthorization(defs);
+    applyToolRegistryAttribution(defs);
+    if (stamped > 0) {
+      console.log(
+        `[Bootstrap] Autorisation par agent — ${stamped} outil(s) sensible(s) estampillé(s) ` +
+        `(allowedAgents + risk). Un agent hors liste est refusé en mode "enforce".`
+      );
+    }
+  } catch (err) {
+    console.error("[Bootstrap] applyToolRegistryAttribution échec:", err);
+  }
+
+  // Audit d'attribution déterministe (fail-closed en mode strict).
+  try {
+    const { enforceAttribution, attributionEnforcementFromEnv } = await import(
+      "../agents/attributionAudit.js"
+    );
+    enforceAttribution(runtime, attributionEnforcementFromEnv());
+  } catch (err) {
+    if ((err as Error)?.name === "UnattributedToolsError") throw err;
+    console.error("[Bootstrap] Audit d'attribution échec:", err);
+  }
+
+  // Garde fail-fast des capabilities fantômes (fail-closed en mode strict).
+  try {
+    const { enforceCapabilities, capabilityEnforcementFromEnv } = await import(
+      "../agents/capabilityAudit.js"
+    );
+    enforceCapabilities(runtime, capabilityEnforcementFromEnv());
+  } catch (err) {
+    if ((err as Error)?.name === "PhantomCapabilityError") throw err;
+    console.error("[Bootstrap] Audit des capabilities échec:", err);
+  }
 }
 
 /**
@@ -136,66 +207,19 @@ export async function bootstrapRuntime(config: BootstrapConfig = {}): Promise<Bo
   // 6. Démarrer le runtime
   await runtime.start();
 
-  // 6b. Alimenter le mapper d'attribution à partir du ToolRegistry (source de
-  // vérité). Les outils qui déclarent `attribution` priment sur le mapping
-  // dérivé des capabilities de rôle. Import dynamique pour éviter le couplage
-  // server/runtime → server/agents au chargement du module.
-  try {
-    const { applyToolRegistryAttribution, applyRuntimeAgentAuthorization } = await import(
-      "../agents/toolAgentMapper.js"
-    );
-    const defs = runtime.tools.getDefinitions();
-    // Autorisation par agent (chantier C) : estampille allowedAgents + risk sur
-    // les outils sensibles AVANT de calculer le cache d'affichage, afin que la
-    // même vérité serve l'exécution (PermissionPolicy) et la télémétrie.
-    const stamped = applyRuntimeAgentAuthorization(defs);
-    applyToolRegistryAttribution(defs);
-    if (stamped > 0) {
-      console.log(
-        `[Bootstrap] Autorisation par agent — ${stamped} outil(s) sensible(s) estampillé(s) ` +
-        `(allowedAgents + risk). Un agent hors liste est refusé en mode "enforce".`
-      );
-    }
-  } catch (err) {
-    console.error("[Bootstrap] applyToolRegistryAttribution échec:", err);
+  // 6a. Enregistrement des outils tardifs (custom skills) AVANT les audits.
+  // Sans cela, l'audit d'attribution (fail-closed en mode strict) et la
+  // réconciliation ne voient pas ces outils : total sous-évalué et custom
+  // skills non audités (cf. anomalie 224 vs 228).
+  if (config.beforeAudits) {
+    await config.beforeAudits(runtime, skillManager);
   }
 
-  // 6c. Audit d'attribution déterministe. Une fois l'attribution finalisée
-  // (socle sensible + ToolRegistry), on vérifie que chaque outil exécutable
-  // possède un propriétaire résoluble (explicite, capability ou catégorie).
-  // Les outils restants retomberaient sur le rôle neutre "system" : on les
-  // liste de façon actionnable (owner suggéré) et, en mode "strict"
-  // (Leanna_ATTRIBUTION_ENFORCEMENT=strict), on ÉCHOUE le boot pour interdire
-  // toute régression silencieuse. Défaut "warn" : non bloquant, rétro-compatible.
-  try {
-    const { enforceAttribution, attributionEnforcementFromEnv } = await import(
-      "../agents/attributionAudit.js"
-    );
-    enforceAttribution(runtime, attributionEnforcementFromEnv());
-  } catch (err) {
-    // En mode strict, UnattributedToolsError doit remonter : on ne l'avale pas.
-    if ((err as Error)?.name === "UnattributedToolsError") throw err;
-    console.error("[Bootstrap] Audit d'attribution échec:", err);
-  }
-
-  // 6d. Garde fail-fast des capabilities fantômes. Un agent peut déclarer dans
-  // ses capabilities (roles.ts) un outil non exécutable (absent de
-  // EXECUTABLE_AGENT_TOOLS) ou jamais enregistré dans le ToolRegistry : à
-  // l'exécution, l'exécuteur refuse l'appel et l'agent re-tente en vain
-  // (boucle de retry stérile qui mange le budget de contexte). On détecte ce
-  // désalignement AU BOOT — avertissement actionnable par défaut, erreur de
-  // boot en mode "strict" (Leanna_CAPABILITY_ENFORCEMENT=strict) — au lieu
-  // d'attendre le premier appel en pleine mission.
-  try {
-    const { enforceCapabilities, capabilityEnforcementFromEnv } = await import(
-      "../agents/capabilityAudit.js"
-    );
-    enforceCapabilities(runtime, capabilityEnforcementFromEnv());
-  } catch (err) {
-    // En mode strict, PhantomCapabilityError doit remonter : on ne l'avale pas.
-    if ((err as Error)?.name === "PhantomCapabilityError") throw err;
-    console.error("[Bootstrap] Audit des capabilities échec:", err);
-  }
+  // 6b/6c/6d. Attribution + autorisation par agent + audits de boot.
+  // Factorisé dans applyAttributionAndAudits pour que les DEUX bootstraps
+  // (async ET sync) appliquent exactement la même séquence : sans ce partage,
+  // le chemin synchrone divergeait et laissait le socle sensible non appliqué.
+  await applyAttributionAndAudits(runtime);
 
   // 7. Callback post-init
   if (config.onReady) {
@@ -291,7 +315,27 @@ export function bootstrapRuntimeSync(config: BootstrapConfig = {}): BootstrapRes
   }
 
   // Démarrage async en arrière-plan
-  runtime.start().then(() => {
+  runtime.start().then(async () => {
+    // Enregistrer les outils tardifs (custom skills) AVANT les audits, pour que
+    // l'attribution, l'audit déterministe et la réconciliation voient TOUS les
+    // outils. Sans cela, l'audit tournait sur un total sous-évalué et les custom
+    // skills échappaient au contrôle d'attribution (anomalie 224 vs 228).
+    if (config.beforeAudits) {
+      await config.beforeAudits(runtime, skillManager);
+    }
+
+    // Appliquer l'attribution + l'autorisation par agent AVANT onReady (où tourne
+    // reconcileAndLogCounts, qui lit le cache d'attribution). La version async
+    // de bootstrapRuntime faisait déjà cela à l'étape 6b/6c/6d ; sans ce bloc,
+    // le chemin SYNCHRONE laissait le socle sensible non appliqué — d'où
+    // « Explicite : 0 » au démarrage et 5 outils sensibles (project_scaffold,
+    // quality_loop, update_custom_skill, assistant_logs,
+    // generate_codebase_markdown) retombant sur le rôle neutre « system ».
+    // Plus grave : applyRuntimeAgentAuthorization n'était pas appelé, donc
+    // allowedAgents + risk n'étaient pas estampillés sur les outils sensibles,
+    // affaiblissant PermissionPolicy.enforce en mode "enforce".
+    await applyAttributionAndAudits(runtime);
+
     if (config.onReady) {
       return config.onReady(runtime, skillManager);
     }
