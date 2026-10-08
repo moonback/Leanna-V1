@@ -29,7 +29,13 @@ export type AgentRole =
   | "proofreader"
   | "translator"
   | "summarizer"
-  | "planner";
+  | "planner"
+  | "vision"
+  | "ui_ux"
+  | "seo"
+  | "documentation"
+  | "accessibility"
+  | "performance";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Mappings de langue et style
@@ -205,6 +211,7 @@ export const AGENT_ROLES_INFO: Record<AgentRole, { description: string; write: b
   tester:      { description: "Conception et écriture de tests automatisés (unitaires, intégration)", write: true, category: "Code" },
   security:    { description: "Audit de sécurité applicative, vulnérabilités OWASP et secrets", write: false, category: "Code" },
   architect:   { description: "Conception logicielle, modélisation de données, contrats et modules", write: true, category: "Code" },
+  vision:        { description: "Analyse visuelle d'interfaces : captures d'écran, éléments UI, patterns visuels et navigation web", write: false, category: "Code" },
   // Rédaction & Documentation
   writer:      { description: "Rédaction de documents (README, guides, articles, rapports)", write: true, category: "Docs" },
   formatter:   { description: "Mise en forme et formatage Markdown", write: true, category: "Docs" },
@@ -213,6 +220,12 @@ export const AGENT_ROLES_INFO: Record<AgentRole, { description: string; write: b
   translator:  { description: "Traduction et localisation multilingue", write: true, category: "Docs" },
   summarizer:  { description: "Résumés et synthèses condensées", write: true, category: "Docs" },
   planner:     { description: "Plans et structures de documents", write: false, category: "Docs" },
+  // Spécialistes Web & Qualité
+  ui_ux:         { description: "Conception d'interfaces, expérience utilisateur, design systems, ergonomie et parcours", write: true, category: "Web & Qualité" },
+  seo:           { description: "Référencement naturel, balises meta, structure HTML, données structurées et Core Web Vitals", write: true, category: "Web & Qualité" },
+  documentation: { description: "Documentation technique globale : APIs, composants, modules, workflows et guides", write: true, category: "Web & Qualité" },
+  accessibility: { description: "Accessibilité WCAG 2.1/2.2 et ARIA : sémantique HTML, navigation clavier et contrastes", write: true, category: "Web & Qualité" },
+  performance:   { description: "Optimisation des performances : bundles, re-renders, Core Web Vitals, code splitting et lazy loading", write: true, category: "Web & Qualité" },
 };
 
 /**
@@ -226,6 +239,7 @@ export const ALL_AGENT_ROLES: AgentRole[] = [
   "tester",
   "security",
   "architect",
+  "vision",
   "writer",
   "formatter",
   "researcher",
@@ -233,6 +247,11 @@ export const ALL_AGENT_ROLES: AgentRole[] = [
   "translator",
   "summarizer",
   "planner",
+  "ui_ux",
+  "seo",
+  "documentation",
+  "accessibility",
+  "performance",
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
