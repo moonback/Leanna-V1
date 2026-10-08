@@ -704,6 +704,10 @@ export class SystemPromptBuilder {
     if (allowedRoles.includes("debugger")) lines.push("- **Débogage :** résolution d'erreurs et de stacktraces → `debugger`.");
     if (allowedRoles.includes("writer"))   lines.push("- **Rédaction :** document complexe ou spécialisé → `writer`.");
     lines.push("");
+    lines.push("**Choix de l'outil de délégation :**");
+    lines.push("- Rôle cible **évident** (un seul agent clairement adapté) → `agent_delegate` vers ce rôle.");
+    lines.push("- Rôle cible **non évident** (hésitation entre plusieurs agents, ou plusieurs compétences possibles) → `agent_negotiate` : la sous-tâche est mise aux enchères et le meilleur-match la remporte automatiquement.");
+    lines.push("");
     lines.push("## Agents disponibles");
     lines.push("");
     lines.push("| Rôle | Description | Écriture |");

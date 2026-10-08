@@ -74,7 +74,7 @@ const FALLBACK_TOOL_TO_AGENT: Record<string, string> = {
   reasoning_delegate_task: 'planner', reasoning_think: 'planner',
   reasoning_list_strategies: 'planner',
   mission_create: 'planner', mission_status: 'planner', mission_list: 'planner',
-  agent_delegate: 'planner', agent_orchestrate: 'planner',
+  agent_delegate: 'planner', agent_negotiate: 'planner', agent_orchestrate: 'planner',
 };
 
 /**

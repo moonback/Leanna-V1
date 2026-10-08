@@ -176,6 +176,7 @@ const SKILL_LABELS: Record<string, string> = {
   // ── Agents (orchestration multi-agents) ──────────────────────────────────────
   agent_execute: 'Exécuter un agent',
   agent_delegate: 'Déléguer à un agent',
+  agent_negotiate: 'Mettre une tâche aux enchères',
   agent_collaborate: 'Collaborer avec des agents',
   agent_orchestrate: 'Orchestrer des agents',
   agent_status: 'État d\u2019un agent',

@@ -26,6 +26,7 @@ test("agentsSkill — déclare tous les outils attendus", () => {
   const toolNames = agentsSkill.declarations.map((d) => d.name);
   const expected = [
     "agent_delegate",
+    "agent_negotiate",
     "agent_orchestrate",
     "agent_status",
     "agent_list_tasks",
@@ -275,6 +276,65 @@ test("agent_orchestrate — succès avec mock orchestrate", async (t) => {
   assert.equal(result.tasks.length, 2);
   assert.equal(result.tasks[0].role, "refactor");
   assert.equal(result.tasks[1].role, "test");
+});
+
+test("agent_negotiate — déclaration et schéma présents", () => {
+  const decl = agentsSkill.declarations.find((d) => d.name === "agent_negotiate");
+  assert.ok(decl, "agent_negotiate doit être déclaré");
+  assert.ok(decl!.parameters.required.includes("title"));
+  assert.ok(decl!.parameters.required.includes("description"));
+  assert.ok(agentsSkill.inputSchemas!["agent_negotiate"], "schema agent_negotiate doit exister");
+});
+
+test("agent_negotiate — succès avec mock negotiateTask (gagnant attribué)", async (t) => {
+  t.mock.method(agentOrchestrator, "negotiateTask", async () => ({
+    taskId: "nego-001",
+    winner: "tester",
+    winningScore: 0.71,
+    awarded: true,
+    bids: [
+      { role: "tester", score: 0.71, skillMatch: 1, eligible: true },
+      { role: "writer", score: 0.1, skillMatch: 0, eligible: false },
+    ],
+  }));
+
+  const result = await agentsSkill.handleToolCall("agent_negotiate", {
+    title: "Écrire des tests",
+    description: "Couvrir le module de paiement",
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.winner, "tester");
+  assert.equal(result.taskId, "nego-001");
+  assert.ok(result.hint.includes("nego-001"));
+});
+
+test("agent_negotiate — pas de gagnant → success:false", async (t) => {
+  t.mock.method(agentOrchestrator, "negotiateTask", async () => ({
+    taskId: "nego-002",
+    winner: null,
+    winningScore: null,
+    awarded: false,
+    bids: [],
+  }));
+
+  const result = await agentsSkill.handleToolCall("agent_negotiate", {
+    title: "Tâche obscure",
+    description: "Aucun agent capable",
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.winner, null);
+});
+
+test("agent_negotiate — rejette si titre manquant", async () => {
+  await assert.rejects(
+    () => agentsSkill.handleToolCall("agent_negotiate", { description: "Desc sans titre" }),
+    (err: Error) => {
+      assert.match(err.message, /validation|titre|title/i);
+      return true;
+    }
+  );
 });
 
 test("agent_status — retourne une tâche individuelle", async (t) => {

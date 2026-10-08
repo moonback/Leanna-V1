@@ -15,6 +15,8 @@ import { ProgressNotifier, ProgressCallback, EventBroadcaster } from "./Progress
 import { AgentRegistry, agentRegistry } from "./AgentRegistry.js";
 import { agentMessageBus } from "./AgentMessageBus.js";
 import { COLLABORATION_PATTERNS } from "./AgentCommunication.js";
+import { contractNetNegotiator } from "./ContractNetNegotiator.js";
+import { inferRequiredCapabilities } from "./capabilityInference.js";
 import { agentPersistence } from "./AgentPersistence.js";
 import { createLogger } from "../utils/logger.js";
 import { initCustomAgents } from "../routes/custom-agents.js";
@@ -230,6 +232,68 @@ export class AgentOrchestrator {
     });
 
     return task;
+  }
+
+  // ─── Délégation par négociation (contract-net) ─────────────────────────────
+
+  /**
+   * Met une sous-tâche aux enchères (contract-net) au lieu de choisir l'agent
+   * à l'avance : diffuse un appel d'offres, la flotte enchérit automatiquement,
+   * et le meilleur-match (compétences + charge) remporte la tâche et reçoit un
+   * `task_request`.
+   *
+   * Déclenchement DÉTERMINISTE : contrairement au bloc `## DÉLÉGATION` sans
+   * cible (dépendant du phrasé du LLM), cet appel force toujours la négociation.
+   *
+   * Les capacités requises sont fournies explicitement, ou déduites par
+   * heuristique depuis le titre/la description si omises.
+   */
+  async negotiateTask(params: {
+    title: string;
+    description: string;
+    requiredCapabilities?: string[];
+    files?: string[];
+    instructions?: string;
+    priority?: TaskPriority;
+  }): Promise<{
+    taskId: string;
+    winner: AgentRole | null;
+    winningScore: number | null;
+    awarded: boolean;
+    bids: Array<{ role: AgentRole; score: number; skillMatch: number; eligible: boolean }>;
+  }> {
+    const taskId = randomUUID();
+    const requiredCapabilities =
+      params.requiredCapabilities && params.requiredCapabilities.length > 0
+        ? params.requiredCapabilities
+        : inferRequiredCapabilities(params.title + " " + params.description, params.instructions);
+
+    log.info(
+      `📣 Mise aux enchères "${params.title}" — capacités requises: ${requiredCapabilities.join(", ")}`
+    );
+
+    const outcome = await contractNetNegotiator.negotiate({
+      taskId,
+      title: params.title,
+      description: params.description,
+      requiredCapabilities,
+      files: params.files ?? [],
+      instructions: params.instructions,
+      priority: params.priority ?? "medium",
+    });
+
+    return {
+      taskId: outcome.taskId,
+      winner: outcome.winner,
+      winningScore: outcome.winningScore,
+      awarded: outcome.awarded,
+      bids: outcome.bids.map((b) => ({
+        role: b.role,
+        score: b.score,
+        skillMatch: b.skillMatch,
+        eligible: b.eligible,
+      })),
+    };
   }
 
   // ─── Orchestration multi-agents ───────────────────────────────────────────

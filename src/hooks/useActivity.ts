@@ -83,6 +83,7 @@ function toolLabel(tool: string, args?: Record<string, unknown>): string {
     reasoning_list_strategies: () => 'Lister stratégies de pensée',
     // Agent multi-rôles
     agent_delegate:            () => `🤖 Déléguer → ${p('role')}: ${p('title') || 'tâche'}`,
+    agent_negotiate:           () => `📣 Mise aux enchères: ${p('title') || 'tâche'}`,
     agent_orchestrate:         () => `🎯 Orchestration: ${p('title') || 'multi-agents'}`,
     agent_status:              () => `📊 Statut agent: ${p('taskId')?.slice(0, 8) || '...'}`,
     agent_list_tasks:          () => `📋 Tâches agents${p('role') ? ` (${p('role')})` : ''}`,

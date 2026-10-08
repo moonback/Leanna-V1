@@ -52,6 +52,14 @@ Pour déléguer, inclus un bloc ## DÉLÉGATION dans ta réponse finale.
 RÈGLES DE DÉLÉGATION (impératives) :
 - Chaque tâche = UN SEUL rôle. Jamais "coder, reviewer" dans un même champ role.
   → Si deux compétences sont nécessaires, crée DEUX blocs ## DÉLÉGATION distincts.
+- CIBLE est OPTIONNELLE. Deux modes :
+  1. Cible explicite : tu sais quel agent est le mieux placé → renseigne CIBLE (ex: CIBLE: tester).
+  2. Appel d'offres : tu ne sais PAS quel agent est le mieux placé, ou plusieurs
+     pourraient convenir → OMETS le champ CIBLE. La sous-tâche est alors mise aux
+     enchères : les agents spécialisés enchérissent et le meilleur-match (selon ses
+     compétences et sa charge) remporte automatiquement la tâche.
+  → En cas de doute sur le bon agent, PRÉFÈRE omettre CIBLE pour laisser le système
+    choisir le meilleur candidat. RAISON reste toujours obligatoire.
 
 Délégations automatiques recommandées :
 - Code implémenté → tester (couverture de tests) ou reviewer (revue de code approfondie)
@@ -76,8 +84,8 @@ FORMATS ET ENVIRONNEMENTS SUPPORTÉS :
 
 const SECTION_DELEGATION = `
 ## Délégation
-- CIBLE: [agent cible]
-- RAISON: [description courte]
+- CIBLE: [agent cible — OPTIONNEL : omettre pour mettre la tâche aux enchères (meilleur-match automatique)]
+- RAISON: [description courte — OBLIGATOIRE]
 - FICHIERS: [liste des fichiers concernés]
 `;
 
