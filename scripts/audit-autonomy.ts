@@ -25,6 +25,7 @@ import { timeSkill } from "../server/skills/time.js";
 import { verifySkill } from "../server/skills/verify.js";
 import { securityAuditSkill } from "../server/skills/securityAudit.js";
 import { weatherSkill } from "../server/skills/weather.js";
+import { utilitiesSkill } from "../server/skills/utilities.js";
 import { projectSkill } from "../server/skills/project.js";
 import { agentsSkill } from "../server/skills/agents.js";
 import { missionSkill } from "../server/skills/mission.js";
@@ -49,7 +50,7 @@ const { runtime } = bootstrapRuntimeSync({
     automationSkill, browserSkill, codebaseSkill, githubSkill,
     guidelinesSkill, historySkill, knowledgeSkill, listSkill,
     memorySkill, hierarchicalMemorySkill, reasoningSkill, systemSkill, timeSkill,
-    verifySkill, securityAuditSkill, weatherSkill, projectSkill, agentsSkill,
+    verifySkill, securityAuditSkill, weatherSkill, utilitiesSkill, projectSkill, agentsSkill,
     missionSkill, aiStudioDirectivesSkill, documentLinkerSkill,
     documentKnowledgeSkill, richDocumentSkill, imageGenerationSkill, graphifySkill, telegramSkill,
   ],

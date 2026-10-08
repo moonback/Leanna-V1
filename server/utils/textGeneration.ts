@@ -20,9 +20,33 @@ interface TextGenProfile {
   textProvider?: 'gemini' | 'openrouter';
   openrouterModel?: string;
   openrouterApiKey?: string;
+  /** Default temperature for conversational generation (0–2). */
+  temperature?: number;
 }
 
 let _profile: TextGenProfile = {};
+
+/**
+ * Température par défaut d'une assistante généraliste conversationnelle.
+ * Plus élevée que l'ancien défaut « code » (0.2–0.5) pour un ton plus naturel
+ * et créatif. Peut être surchargée par le profil (`profile.temperature`) ou
+ * par appel (`options.temperature`).
+ */
+const GENERALIST_DEFAULT_TEMPERATURE = 0.7;
+
+/**
+ * Résout la température effective d'un appel, par ordre de priorité :
+ *   1. valeur explicite passée à l'appel (`options.temperature`)
+ *   2. température du profil actif (`profile.temperature`)
+ *   3. défaut généraliste (0.7)
+ */
+function resolveTemperature(explicit?: number): number {
+  if (typeof explicit === 'number' && Number.isFinite(explicit)) return explicit;
+  if (typeof _profile.temperature === 'number' && Number.isFinite(_profile.temperature)) {
+    return _profile.temperature;
+  }
+  return GENERALIST_DEFAULT_TEMPERATURE;
+}
 
 /**
  * Called by server.ts at startup and whenever the profile is updated.
@@ -251,7 +275,7 @@ async function streamWithGemini(options: GenerateTextStreamOptions): Promise<str
     model,
     contents: [{ role: 'user', parts }],
     config: {
-      temperature: options.temperature ?? 0.5,
+      temperature: resolveTemperature(options.temperature),
       // Voir generateWithGemini : même repli maxTokens → maxOutputTokens.
       ...(options.maxOutputTokens !== undefined
         ? { maxOutputTokens: options.maxOutputTokens }
@@ -325,7 +349,7 @@ async function streamWithOpenRouter(options: GenerateTextStreamOptions): Promise
       body: JSON.stringify({
         model,
         messages,
-        temperature: options.temperature ?? 0.5,
+        temperature: resolveTemperature(options.temperature),
         max_tokens: options.maxTokens ?? options.maxOutputTokens ?? 8192,
         stream: true,
       }),
@@ -413,7 +437,7 @@ async function generateWithGemini(options: GenerateTextOptions): Promise<Generat
           model,
           contents: [{ role: 'user', parts }],
           config: {
-            temperature: options.temperature ?? 0.5,
+            temperature: resolveTemperature(options.temperature),
             // maxOutputTokens est la clé "native" Gemini ; maxTokens est le nom
             // générique utilisé par les appelants (ex. chainOfThought.ts) qui
             // partagent le même code avec OpenRouter. Sans ce repli, un appel
@@ -554,7 +578,7 @@ async function generateWithOpenRouter(options: GenerateTextOptions): Promise<Gen
       body: JSON.stringify({
         model,
         messages,
-        temperature: options.temperature ?? 0.5,
+        temperature: resolveTemperature(options.temperature),
         max_tokens: options.maxTokens ?? options.maxOutputTokens ?? 8192,
       }),
       signal: controller.signal,
