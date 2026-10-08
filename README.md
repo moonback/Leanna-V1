@@ -35,7 +35,7 @@ Rien ne quitte la machine sans action explicite. Chaque action à effet de bord 
 &nbsp;
 <img src="https://img.shields.io/badge/Tests%20front-27%20passing-00C853?style=for-the-badge&logo=vitest&logoColor=white" alt="Tests front" />
 &nbsp;
-<img src="https://img.shields.io/badge/version-1.5.0-A78BFA?style=for-the-badge" alt="Version" />
+<img src="https://img.shields.io/badge/version-1.6.0-A78BFA?style=for-the-badge" alt="Version" />
 
 <br>
 

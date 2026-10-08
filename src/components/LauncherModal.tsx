@@ -297,7 +297,7 @@ export function LauncherModal() {
                 <div className="flex items-center gap-2">
                   
                   <span className="text-xs text-[var(--text-muted)] font-mono opacity-70">
-                    v1.5.0 • Environnement actif
+                    v1.6.0 • Environnement actif
                   </span>
                 </div>
 

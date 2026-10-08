@@ -17,7 +17,7 @@ echo.
 echo   %ESC%[48;5;27m%ESC%[97m                                        %ESC%[0m
 echo   %ESC%[48;5;27m%ESC%[97m              L E A N N A               %ESC%[0m
 echo   %ESC%[48;5;27m%ESC%[97m                                        %ESC%[0m
-echo   %ESC%[90m   Autonomous AI Workspace  -  v1.5.0%ESC%[0m
+echo   %ESC%[90m   Autonomous AI Workspace  -  v1.6.0%ESC%[0m
 echo.
 
 :: Aller dans le repertoire du script
