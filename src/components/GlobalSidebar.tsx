@@ -125,12 +125,20 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
   const { theme } = useTheme();
   const agent = useAgentStatus();
 
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem(COLLAPSE_KEY) === '1'; } catch { return false; }
+  // Préférence persistée : la sidebar est-elle repliée par défaut (quand la souris
+  // n'est pas dessus) ? Le bouton bascule cette préférence.
+  const [pinnedCollapsed, setPinnedCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(COLLAPSE_KEY) !== '0'; } catch { return true; }
   });
   useEffect(() => {
-    try { localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'); } catch { /* ignore */ }
-  }, [collapsed]);
+    try { localStorage.setItem(COLLAPSE_KEY, pinnedCollapsed ? '1' : '0'); } catch { /* ignore */ }
+  }, [pinnedCollapsed]);
+
+  // Survol : quand la préférence est « repliée », passer la souris sur la barre
+  // la déplie temporairement ; la quitter la replie à nouveau.
+  const [hovered, setHovered] = useState(false);
+  const collapsed = pinnedCollapsed && !hovered;
+  const setCollapsed = setPinnedCollapsed;
 
   const isActive = useCallback(
     (path: string) => (path === '/ide' ? pathname === '/' || pathname === '/ide' : pathname === path),
@@ -150,9 +158,11 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
       aria-label="Navigation Leanna"
       className="flex h-full flex-shrink-0 flex-col border-r"
       style={{ width, borderColor: 'var(--border-base)', backgroundColor: 'var(--bg-secondary)', transition: reduceMotion ? undefined : 'width 0.18s ease' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       {/* Brand + collapse toggle */}
-      <div className="flex items-center gap-2 px-3 py-3" style={{ height: 56 }}>
+      <div className={`flex items-center gap-2 px-3 py-3 ${collapsed ? 'justify-center' : ''}`} style={{ height: 56 }}>
         <span
           aria-hidden
           className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-sm font-bold"
@@ -165,15 +175,18 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
             Leanna{mode === 'ide' ? ' · IDE' : ''}
           </span>
         )}
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
-          aria-label={collapsed ? 'Déplier la navigation' : 'Replier la navigation'}
-          className="rounded-md p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
-          style={{ color: 'var(--text-dimmed)' }}
-        >
-          {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-        </button>
+        {!collapsed && (
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            aria-label={pinnedCollapsed ? 'Épingler la navigation (déplier)' : 'Réduire automatiquement la navigation'}
+            title={pinnedCollapsed ? 'Épingler la navigation' : 'Réduire automatiquement'}
+            className="rounded-md p-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
+            style={{ color: 'var(--text-dimmed)' }}
+          >
+            {pinnedCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+          </button>
+        )}
       </div>
 
       {/* Pastille d'état de l'agent — clic = retour à Mission Control.
@@ -239,8 +252,10 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
         />
       )}
 
-      {/* Grouped navigation (global routes) or tools (IDE) */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      {/* Grouped navigation (global routes) or tools (IDE).
+          En mode replié on masque la barre de défilement (le contenu icônes
+          tient) pour éviter qu'elle recouvre les icônes. */}
+      <div className={`min-h-0 flex-1 px-2 pb-2 ${collapsed ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {mode === 'ide' ? (
           toolGroups.map((group) => (
             <div key={group.id} className="mb-1.5">
