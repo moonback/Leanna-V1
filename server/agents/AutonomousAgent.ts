@@ -31,6 +31,7 @@ import { AgentMessageBus } from "./AgentMessageBus.js";
 import type { AgentTaskRunner } from "./AgentTaskRunner.js";
 import { AutonomousLoop, type LoopConfig } from "./AutonomousLoop.js";
 import { getAgentDefinitionOrThrow } from "./roles.js";
+import { contractNetNegotiator, type ContractNetNegotiator } from "./ContractNetNegotiator.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("AutonomousAgent");
@@ -62,6 +63,8 @@ export class AutonomousAgent {
   private readonly bus: AgentMessageBus;
   private readonly executor: AgentTaskRunner;
   private readonly loop: AutonomousLoop;
+  /** Négociateur contract-net : l'agent lui soumet ses bids automatiques. */
+  private readonly negotiator: ContractNetNegotiator;
 
   // État interne
   private taskQueue: TaskQueueItem[] = [];
@@ -71,10 +74,17 @@ export class AutonomousAgent {
   private broadcastSubId: string | null = null;
   private isOnline = false;
 
-  constructor(role: AgentRole, executor: AgentTaskRunner, bus: AgentMessageBus, loopConfig?: Partial<LoopConfig>) {
+  constructor(
+    role: AgentRole,
+    executor: AgentTaskRunner,
+    bus: AgentMessageBus,
+    loopConfig?: Partial<LoopConfig>,
+    negotiator: ContractNetNegotiator = contractNetNegotiator
+  ) {
     this.role = role;
     this.executor = executor;
     this.bus = bus;
+    this.negotiator = negotiator;
     // La boucle autonome utilise la config par défaut, surchargeable par rôle
     this.loop = new AutonomousLoop(executor, {
       maxIterations: 3,
@@ -270,6 +280,12 @@ export class AutonomousAgent {
       case "collaboration_request":
         await this.handleCollaborationRequest(message);
         break;
+      case "broadcast":
+        // Un message broadcast peut être capté par l'abonnement "*" (handleMessage)
+        // avant l'abonnement "broadcast" (dédup par rôle côté bus). On route donc
+        // explicitement vers handleBroadcast pour ne jamais rater un appel d'offres.
+        await this.handleBroadcast(message);
+        break;
       default:
         log.debug(`[${this.agentName}] Message type "${message.type}" ignoré`);
     }
@@ -278,7 +294,56 @@ export class AutonomousAgent {
   private async handleBroadcast(message: AgentMessage): Promise<void> {
     const payload = message.payload as { message: string; data?: Record<string, unknown> };
     log.debug(`📢 [${this.agentName}] Broadcast: "${payload.message}" de [${message.from}]`);
-    // Les agents peuvent réagir aux broadcasts ici (ex: mise à jour de contexte)
+
+    // Répondre automatiquement aux appels d'offres contract-net.
+    if (payload.message === "call_for_proposals") {
+      this.autoBidOnCall(payload.data ?? {});
+    }
+    // Les agents peuvent réagir aux autres broadcasts ici (ex: mise à jour de contexte)
+  }
+
+  /**
+   * Soumet automatiquement un bid en réponse à un appel d'offres diffusé.
+   * Le bid est dérivé des capacités réelles de l'agent (skillMatch) et de sa
+   * charge live (loadPenalty), fournissant une offre honnête et à jour.
+   */
+  private autoBidOnCall(data: Record<string, unknown>): void {
+    const taskId = typeof data.taskId === "string" ? data.taskId : null;
+    if (!taskId || !this.negotiator.hasOpenCall(taskId)) return;
+
+    const requiredCapabilities = Array.isArray(data.requiredCapabilities)
+      ? (data.requiredCapabilities as unknown[]).filter((c): c is string => typeof c === "string")
+      : [];
+
+    const agentDef = getAgentDefinitionOrThrow(this.role);
+    const skillMatch = this.negotiator.skillMatchFor(agentDef.capabilities, requiredCapabilities);
+
+    // N'enchérit pas si l'agent ne couvre aucune des capacités requises :
+    // un bid inéligible n'apporte rien et pollue l'enchère.
+    if (skillMatch <= 0) {
+      log.debug(`🙅 [${this.agentName}] N'enchérit pas sur ${taskId.slice(0, 8)} (skillMatch 0)`);
+      return;
+    }
+
+    // Charge live : 1 tâche active/en file ≈ 0.25 de pénalité, plafonnée à 1.
+    const liveLoad = Math.min(1, (this.runningTasks.size + this.taskQueue.length) * 0.25);
+    // Confiance neutre tant qu'aucune métrique de fiabilité par-rôle n'existe.
+    const confidence = 0.5;
+
+    const submitted = this.negotiator.submitBid(taskId, {
+      role: this.role,
+      skillMatch,
+      confidence,
+      loadPenalty: liveLoad,
+      metadata: { auto: true },
+    });
+
+    if (submitted) {
+      log.info(
+        `🙋 [${this.agentName}] Bid soumis pour ${taskId.slice(0, 8)} ` +
+          `(skill ${skillMatch.toFixed(2)}, load ${liveLoad.toFixed(2)})`
+      );
+    }
   }
 
   /** Traite une task_request reçue d'un autre agent */

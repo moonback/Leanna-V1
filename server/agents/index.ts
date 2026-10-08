@@ -99,6 +99,17 @@ export type {
 // Routage avancé
 export type { RoutingStrategy } from "./AgentCommunication.js";
 
+// Négociation contract-net (bid/award) par-dessus le bus de messages
+export { ContractNetNegotiator, contractNetNegotiator, NEGOTIATION_INITIATOR } from "./ContractNetNegotiator.js";
+export type {
+  NegotiationTask,
+  Bid,
+  ScoredBid,
+  NegotiationOutcome,
+  ScoringWeights,
+  NegotiatorOptions,
+} from "./ContractNetNegotiator.js";
+
 // Surveillance et traçage du MessageBus
 export { MessageBusMonitor, messageBusMonitor } from "./MessageBusMonitor.js";
 export type { 

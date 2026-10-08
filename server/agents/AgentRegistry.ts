@@ -15,6 +15,7 @@ import { AutonomousAgent } from "./AutonomousAgent.js";
 import type { LoopConfig } from "./AutonomousLoop.js";
 import { AgentExecutor } from "./AgentExecutor.js";
 import { AgentMessageBus, agentMessageBus } from "./AgentMessageBus.js";
+import { contractNetNegotiator, type ContractNetNegotiator } from "./ContractNetNegotiator.js";
 import { ProgressNotifier } from "./ProgressNotifier.js";
 import { STATIC_AGENT_REGISTRY, listAgentRoles } from "./roles.js";
 import { dynamicAgentRegistry } from "./DynamicAgentRegistry.js";
@@ -38,12 +39,18 @@ export class AgentRegistry {
    */
   private runner: AgentTaskRunner;
   private bus: AgentMessageBus;
+  /** Négociateur contract-net partagé, injecté dans chaque agent autonome. */
+  private negotiator: ContractNetNegotiator;
   private initialized = false;
   /** Config de boucle mémorisée par rôle, pour recréer à l'identique au swap de moteur. */
   private loopConfigByRole = new Map<AgentRole, Partial<LoopConfig>>();
 
-  constructor(bus: AgentMessageBus = agentMessageBus) {
+  constructor(
+    bus: AgentMessageBus = agentMessageBus,
+    negotiator: ContractNetNegotiator = contractNetNegotiator
+  ) {
     this.bus = bus;
+    this.negotiator = negotiator;
     this.notifier = new ProgressNotifier();
     this.executor = new AgentExecutor(this.notifier);
     this.runner = this.executor;
@@ -105,7 +112,7 @@ export class AgentRegistry {
     this.agents.clear();
     // Recrée chaque agent sur le nouveau moteur, en conservant sa config de boucle.
     for (const role of roles) {
-      const agent = new AutonomousAgent(role, this.runner, this.bus, this.loopConfigByRole.get(role));
+      const agent = new AutonomousAgent(role, this.runner, this.bus, this.loopConfigByRole.get(role), this.negotiator);
       this.agents.set(role, agent);
       agent.start();
     }
@@ -151,7 +158,7 @@ export class AgentRegistry {
     for (const role of allRoles) {
       const loopConfig = loopConfigByRole[role] ?? { maxIterations: 2, minConfidenceScore: 0.60 };
       this.loopConfigByRole.set(role as AgentRole, loopConfig);
-      const agent = new AutonomousAgent(role as AgentRole, this.runner, this.bus, loopConfig);
+      const agent = new AutonomousAgent(role as AgentRole, this.runner, this.bus, loopConfig, this.negotiator);
       this.agents.set(role as AgentRole, agent);
       agent.start();
     }
@@ -238,7 +245,7 @@ export class AgentRegistry {
 
     const config = loopConfig ?? { maxIterations: 2, minConfidenceScore: 0.60 };
     this.loopConfigByRole.set(role as AgentRole, config);
-    const agent = new AutonomousAgent(role as AgentRole, this.runner, this.bus, config);
+    const agent = new AutonomousAgent(role as AgentRole, this.runner, this.bus, config, this.negotiator);
     this.agents.set(role as AgentRole, agent);
     agent.start();
 
