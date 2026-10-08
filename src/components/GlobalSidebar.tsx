@@ -419,18 +419,18 @@ function NavButton({ item, active, collapsed, onClick, disabled = false }: { ite
         disabled={disabled}
         aria-current={active ? 'page' : undefined}
         title={collapsed ? item.label : disabled ? `${item.label} (nécessite l'assistant connecté)` : undefined}
-        className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)] disabled:cursor-not-allowed disabled:opacity-40"
         style={{
           backgroundColor: active ? 'var(--bg-active)' : 'transparent',
-          color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+          color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
         }}
         onMouseEnter={(e) => { if (!active && !disabled) e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
         onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = 'transparent'; }}
       >
         {active && (
-          <span aria-hidden className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r" style={{ backgroundColor: 'var(--accent-primary)' }} />
+          <span aria-hidden className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full" style={{ backgroundColor: 'var(--accent-primary)' }} />
         )}
-        <Icon size={16} className="flex-shrink-0" style={{ color: active ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
+        <Icon size={18} className="flex-shrink-0" style={{ color: active ? 'var(--accent-primary)' : 'var(--text-muted)' }} />
         {!collapsed && <span className="truncate text-sm font-medium">{item.label}</span>}
       </button>
       {collapsed && (
