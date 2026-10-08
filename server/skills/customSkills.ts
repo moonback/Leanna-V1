@@ -185,6 +185,10 @@ async function getCachedSkills(): Promise<CustomSkillRow[]> {
 /** Force le rafraîchissement du cache (à appeler après CRUD) */
 export function invalidateCustomSkillsCache(): void {
   cacheTimestamp = 0;
+  // Les embeddings sémantiques sont indexés par hash de contenu : ils
+  // s'auto-invalident si le texte change. On vide tout de même le cache pour
+  // éviter d'y laisser des skills supprimés après un CRUD.
+  invalidateCustomSkillEmbeddings();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -194,6 +198,212 @@ export function invalidateCustomSkillsCache(): void {
 export async function getCustomSkillDeclarations(): Promise<any[]> {
   const skills = await getCachedSkills();
   return skills.map(buildDeclaration);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sélection par pertinence des custom skills (évite d'injecter TOUS les skills)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Tokenise un texte en mots significatifs (minuscules, sans accents, >= 3 chars). */
+function tokenize(text: string): string[] {
+  return (text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // retire les accents
+    .replace(/[^a-z0-9\s_-]/g, " ")
+    .split(/[\s_-]+/)
+    .filter((t) => t.length >= 3);
+}
+
+/**
+ * Score de pertinence d'un custom skill vis-à-vis d'une requête.
+ * Pondère les correspondances par champ : nom > catégorie > description >
+ * paramètres > instruction. Retourne un score brut (>= 0).
+ */
+export function scoreCustomSkillRelevance(skill: CustomSkillRow, query: string): number {
+  const q = new Set(tokenize(query));
+  if (q.size === 0) return 0;
+
+  const fieldWeight = (text: string, weight: number): number => {
+    const toks = new Set(tokenize(text));
+    let hits = 0;
+    for (const t of toks) if (q.has(t)) hits++;
+    return hits * weight;
+  };
+
+  let score = 0;
+  score += fieldWeight(skill.name, 5);
+  score += fieldWeight(skill.category ?? "", 3);
+  score += fieldWeight(skill.description ?? "", 2);
+  for (const p of skill.parameters ?? []) {
+    score += fieldWeight(`${p.name} ${p.description ?? ""}`, 1);
+  }
+  score += fieldWeight(skill.instruction ?? "", 1);
+  return score;
+}
+
+export interface CustomSkillSelectionOptions {
+  /** Nombre max de custom skills injectés (défaut 8). */
+  maxSkills?: number;
+  /** Score minimum pour être retenu (défaut 1). */
+  minScore?: number;
+  /**
+   * Nombre de skills gardés quand la requête est vide/sans correspondance.
+   * Évite d'injecter des dizaines de skills « au cas où ». Défaut 0.
+   */
+  fallbackCount?: number;
+}
+
+/**
+ * Sélectionne les noms d'outils (`custom_<name>`) des custom skills PERTINENTS
+ * pour une requête. Au lieu d'injecter tous les custom skills (coûteux en tokens
+ * et déroutant pour le modèle quand ils sont nombreux), on ne garde que les
+ * mieux scorés au-dessus d'un seuil, plafonnés à `maxSkills`.
+ *
+ * Requête vide ou aucune correspondance → on garde au plus `fallbackCount`
+ * skills (0 par défaut) : le modèle peut toujours lister/charger via les outils
+ * de gestion CRUD, qui restent eux toujours disponibles.
+ */
+export async function selectRelevantCustomSkillNames(
+  query: string,
+  opts: CustomSkillSelectionOptions = {},
+): Promise<Set<string>> {
+  const maxSkills = opts.maxSkills ?? 8;
+  const minScore = opts.minScore ?? 1;
+  const fallbackCount = opts.fallbackCount ?? 0;
+
+  const skills = await getCachedSkills();
+  if (skills.length === 0) return new Set();
+
+  const scored = skills
+    .map((s) => ({ name: `custom_${s.name}`, score: scoreCustomSkillRelevance(s, query) }))
+    .sort((a, b) => b.score - a.score);
+
+  const relevant = scored.filter((s) => s.score >= minScore).slice(0, maxSkills);
+
+  // Repli : aucune correspondance → au plus `fallbackCount` premiers skills.
+  const picked = relevant.length > 0 ? relevant : scored.slice(0, fallbackCount);
+  return new Set(picked.map((s) => s.name));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Sélection SÉMANTIQUE (embeddings) — réutilise embedTextsOpenRouter
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Similarité cosinus entre deux vecteurs. 0 si incompatibles. */
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a || !b || a.length !== b.length || a.length === 0) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/** Texte représentatif d'un skill pour l'embedding (nom + catégorie + description). */
+function skillEmbeddingText(s: CustomSkillRow): string {
+  return `${s.name}\n${s.category ?? ""}\n${s.description ?? ""}`.trim();
+}
+
+/** Hash de contenu léger (djb2) pour invalider l'embedding d'un skill modifié. */
+export function hashText(t: string): string {
+  let h = 5381;
+  for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+/** Cache des embeddings de skills : skillId → { hash du texte, vecteur }. */
+const skillEmbeddingCache = new Map<string, { hash: string; vector: number[] }>();
+
+/** Vide le cache des embeddings de skills (ex. après CRUD). */
+export function invalidateCustomSkillEmbeddings(): void {
+  skillEmbeddingCache.clear();
+}
+
+export interface SemanticSelectionOptions extends CustomSkillSelectionOptions {
+  /** Similarité cosinus minimale pour retenir un skill (défaut 0.25). */
+  minSimilarity?: number;
+  /** Budget de latence pour l'appel d'embeddings, en ms (défaut 8000). */
+  timeoutMs?: number;
+}
+
+/**
+ * Variante SÉMANTIQUE de la sélection : embarque la requête + les textes des
+ * skills (nom/catégorie/description) et classe par similarité cosinus.
+ *
+ * - Un SEUL appel batché à `embedTextsOpenRouter` (requête + skills non cachés).
+ * - Les embeddings de skills sont mis en cache par hash de contenu : un skill
+ *   inchangé n'est jamais ré-embarqué (coût stable = 1 embedding de requête).
+ * - Budget de latence court + 1 retry pour ne pas ralentir le démarrage de session.
+ * - Repli AUTOMATIQUE sur le scorer lexical si : pas de clé OpenRouter, réseau/
+ *   timeout, requête vide, ou vecteur de requête vide.
+ */
+export async function selectRelevantCustomSkillNamesSemantic(
+  query: string,
+  opts: SemanticSelectionOptions = {},
+): Promise<Set<string>> {
+  const maxSkills = opts.maxSkills ?? 8;
+  const minSimilarity = opts.minSimilarity ?? 0.25;
+  const fallbackCount = opts.fallbackCount ?? 0;
+  const timeoutMs = opts.timeoutMs ?? 8000;
+
+  const trimmed = query.trim();
+  const skills = await getCachedSkills();
+  if (skills.length === 0) return new Set();
+
+  // Requête vide : pas de signal sémantique utile → déléguer au lexical (qui
+  // gère le fallbackCount proprement).
+  if (trimmed.length === 0) {
+    return selectRelevantCustomSkillNames(query, opts);
+  }
+
+  try {
+    const { embedTextsOpenRouter } = await import("../utils/openrouterEmbeddings.js");
+
+    // Skills dont l'embedding est absent ou périmé (texte modifié).
+    const stale = skills.filter(
+      (s) => skillEmbeddingCache.get(s.id)?.hash !== hashText(skillEmbeddingText(s)),
+    );
+
+    // Un seul appel batché : [requête, ...textes des skills périmés].
+    const inputs = [trimmed, ...stale.map(skillEmbeddingText)];
+    const vectors = await embedTextsOpenRouter(inputs, { timeoutMs, maxRetries: 1 });
+
+    const queryVec = vectors[0];
+    if (!queryVec || queryVec.length === 0) {
+      return selectRelevantCustomSkillNames(query, opts);
+    }
+
+    // Mémoriser les embeddings fraîchement calculés.
+    stale.forEach((s, i) => {
+      const vec = vectors[i + 1];
+      if (vec && vec.length > 0) {
+        skillEmbeddingCache.set(s.id, { hash: hashText(skillEmbeddingText(s)), vector: vec });
+      }
+    });
+
+    // Classer tous les skills par similarité cosinus (ceux sans embedding → 0).
+    const scored = skills
+      .map((s) => {
+        const cached = skillEmbeddingCache.get(s.id);
+        return { name: `custom_${s.name}`, score: cached ? cosineSimilarity(queryVec, cached.vector) : 0 };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const relevant = scored.filter((s) => s.score >= minSimilarity).slice(0, maxSkills);
+    // Aucune similarité au seuil → repli lexical plutôt que des choix au hasard.
+    if (relevant.length === 0) {
+      return selectRelevantCustomSkillNames(query, opts);
+    }
+    const picked = relevant.length > 0 ? relevant : scored.slice(0, fallbackCount);
+    return new Set(picked.map((s) => s.name));
+  } catch {
+    // Clé absente / réseau / timeout → repli lexical silencieux et rapide.
+    return selectRelevantCustomSkillNames(query, opts);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
