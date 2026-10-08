@@ -517,20 +517,28 @@ export const knowledgeSkill: Skill = {
     }),
     knowledge_search_entities: z.object({
       query: z.string().min(1, "La requête ne peut être vide").trim(),
+      // Le LLM (ou le runtime) envoie parfois type_filter: "" au lieu d'omettre
+      // le champ. On normalise toute chaîne vide/espaces en `undefined` AVANT la
+      // validation de l'enum, qui n'accepte pas de valeur vide.
       type_filter: z
-        .enum([
-          "class",
-          "function",
-          "interface",
-          "enum",
-          "type",
-          "constant",
-          "variable",
-          "component",
-          "method",
-          "import",
-          "export",
-        ])
+        .preprocess(
+          (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+          z
+            .enum([
+              "class",
+              "function",
+              "interface",
+              "enum",
+              "type",
+              "constant",
+              "variable",
+              "component",
+              "method",
+              "import",
+              "export",
+            ])
+            .optional(),
+        )
         .optional(),
     }),
     knowledge_memory_search: z.object({

@@ -272,6 +272,28 @@ export class AgentOrchestrator {
       `📣 Mise aux enchères "${params.title}" — capacités requises: ${requiredCapabilities.join(", ")}`
     );
 
+    // Enregistre la tâche négociée dans le registre AVANT d'attendre l'issue,
+    // avec le même UUID que celui mis aux enchères. Sans cela, `agent_status`
+    // (et `getTask`) ne trouvent jamais la tâche : elle n'existait que dans le
+    // négociateur/bus le temps de la fenêtre d'enchères, d'où l'erreur
+    // "Aucune tâche ou orchestration trouvée avec l'ID …".
+    const negotiatedTask: AgentTask = {
+      id: taskId,
+      role: "unassigned",
+      title: params.title,
+      description: params.description,
+      priority: params.priority ?? "medium",
+      status: "pending",
+      context: {
+        files: params.files ?? [],
+        instructions: params.instructions,
+        metadata: { negotiated: true, requiredCapabilities },
+      },
+      createdAt: new Date().toISOString(),
+    };
+    this.tasks.set(negotiatedTask.id, negotiatedTask);
+    agentPersistence.saveTask(negotiatedTask).catch(() => {});
+
     const outcome = await contractNetNegotiator.negotiate({
       taskId,
       title: params.title,
@@ -281,6 +303,21 @@ export class AgentOrchestrator {
       instructions: params.instructions,
       priority: params.priority ?? "medium",
     });
+
+    // Reflète l'issue de la négociation sur la tâche enregistrée. L'exécution
+    // du gagnant est fire-and-forget via le bus ; le statut "running" indique
+    // qu'un agent a été attribué, "incomplete" qu'aucune offre éligible n'a été
+    // reçue, et "failed" si la publication du task_request a échoué.
+    if (!outcome.awarded || !outcome.winner) {
+      negotiatedTask.status = "incomplete";
+      negotiatedTask.completedAt = new Date().toISOString();
+    } else {
+      negotiatedTask.role = outcome.winner;
+      negotiatedTask.status = "running";
+      negotiatedTask.startedAt = new Date().toISOString();
+    }
+    this.tasks.set(negotiatedTask.id, negotiatedTask);
+    agentPersistence.saveTask(negotiatedTask).catch(() => {});
 
     return {
       taskId: outcome.taskId,
