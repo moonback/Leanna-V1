@@ -143,7 +143,6 @@ export interface ProfileConfig {
   agents?: AgentsConfig;
   /** Désactiver le raisonnement structuré (Chain of Thought, etc.) */
   reasoningEnabled?: boolean;
-  /** Désactiver les annonces vocales TTS pendant le raisonnement */
   /** Custom system prompt (appended to base instructions) */
   customSystemPrompt?: string;
   /**
