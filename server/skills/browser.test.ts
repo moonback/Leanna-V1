@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { browserSkill, normalizeUrl, rankLinkCandidates, classifyHost, isSponsoredLink } from "./browser.js";
+import { browserSkill, normalizeUrl, rankLinkCandidates, classifyHost, isSponsoredLink, condenseSearchQuery } from "./browser.js";
 
 describe("browser", () => {
   describe("URL policy and link ranking", () => {
@@ -33,6 +33,39 @@ describe("browser", () => {
       assert.equal(candidates.some((candidate) => candidate.isSponsored), true);
       assert.equal(new Set(candidates.map((candidate) => candidate.href)).size, candidates.length);
       assert.equal(candidates[0].isExternal, true);
+    });
+  });
+
+  describe("condenseSearchQuery", () => {
+    it("condenses an LLM paragraph into keywords and drops stopwords", () => {
+      const raw =
+        "Documentation officielle et sources fiables à jour sur l'API Gemini Live vocale : " +
+        "noms des packages, endpoints WebSocket, méthodes.";
+      const out = condenseSearchQuery(raw);
+      // Garde seulement la première idée (coupe au ":").
+      assert.ok(!out.includes("websocket"), "ne garde que la première phrase");
+      // Retire les mots vides FR.
+      assert.ok(!/\b(et|sur|la|les|des|à)\b/.test(out), `stopwords retirés: "${out}"`);
+      // Conserve les termes significatifs.
+      assert.match(out, /gemini/);
+      assert.match(out, /api/);
+      // Borne le nombre de termes.
+      assert.ok(out.split(/\s+/).length <= 12, "au plus 12 termes");
+    });
+
+    it("preserves versioned identifiers like gemini-3.1", () => {
+      const out = condenseSearchQuery("quelle est la dernière version de gemini-3.1-flash-live-preview");
+      assert.match(out, /gemini-3\.1-flash-live-preview/);
+    });
+
+    it("supports a tighter term cap", () => {
+      const out = condenseSearchQuery("alpha beta gamma delta epsilon zeta eta theta", 3);
+      assert.equal(out.split(/\s+/).length, 3);
+    });
+
+    it("falls back to a prefix when everything is a stopword", () => {
+      const out = condenseSearchQuery("the a an and or of to");
+      assert.ok(out.length > 0, "ne renvoie jamais une chaîne vide");
     });
   });
 
@@ -192,13 +225,13 @@ describe("browser", () => {
         assert.ok(!invalidResult.success);
       });
 
-      it("should default to google engine", () => {
+      it("should default to bing engine (Google n'est pas chargeable en webview)", () => {
         const schema = browserSkill.inputSchemas!["browser_search"];
 
         const result = schema.parse({
           query: "test",
         });
-        assert.strictEqual(result.engine, "google");
+        assert.strictEqual(result.engine, "bing");
       });
     });
 
@@ -378,13 +411,13 @@ describe("browser", () => {
         assert.ok(validResult.success);
       });
 
-      it("should default engine to google and maxSources to 3", () => {
+      it("should default engine to bing and maxSources to 3", () => {
         const schema = browserSkill.inputSchemas!["browser_research"];
 
         const result = schema.parse({
           query: "test",
         });
-        assert.strictEqual(result.engine, "google");
+        assert.strictEqual(result.engine, "bing");
         assert.strictEqual(result.maxSources, 3);
       });
 

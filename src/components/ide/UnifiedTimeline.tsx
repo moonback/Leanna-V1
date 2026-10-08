@@ -31,6 +31,12 @@ const PHASE_ORDER: Phase[] = ['planning', 'writing', 'verification'];
 
 /** Classe un outil dans l'une des trois phases de la timeline. */
 function toolToPhase(tool: string): Phase {
+  // Skills personnalisés : traités comme une ACTION (ils exécutent une
+  // instruction utilisateur). Court-circuit AVANT les regex ci-dessous pour
+  // éviter qu'un skill nommé p.ex. custom_search_* ne tombe en « Planification ».
+  if (tool.startsWith('custom_')) {
+    return 'writing';
+  }
   if (/reason|think|plan|search|find|grep|list|analyze|memory|knowledge|get_workspace|read_file_outline/.test(tool)) {
     return 'planning';
   }

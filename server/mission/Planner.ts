@@ -224,6 +224,7 @@ INSTRUCTIONS:
 - Chaque étape doit être concrète et vérifiable
 - Indique la priorité (low/medium/high/critical)
 - Indique les dépendances entre étapes
+${this.buildWebSearchHint(availableSkills)}
 
 RÉPONDS EN JSON STRICT:
 [
@@ -235,6 +236,24 @@ RÉPONDS EN JSON STRICT:
     "dependsOn": []
   }
 ]`;
+  }
+
+  /**
+   * Ajoute une consigne autorisant la recherche internet quand l'information
+   * nécessaire n'est pas disponible dans le projet, à condition qu'un outil de
+   * recherche web soit effectivement disponible pour cette mission.
+   */
+  private buildWebSearchHint(availableSkills: string[]): string {
+    const webTools = availableSkills.filter((s) =>
+      s === "browser_web_search" || s === "browser_research" || /web_search|web_fetch/.test(s)
+    );
+    if (webTools.length === 0) return "";
+    const tool = webTools.includes("browser_web_search") ? "browser_web_search" : webTools[0];
+    return (
+      `- Si une information requise (version, documentation, API, fait récent, exemple) ` +
+      `n'est pas disponible dans le projet, ajoute une étape de RECHERCHE INTERNET ` +
+      `utilisant "${tool}" avant de produire le livrable.`
+    );
   }
 
   /** Noms des outils disponibles marqués durablement peu fiables. Best-effort. */

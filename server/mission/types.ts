@@ -217,6 +217,8 @@ export interface MissionConfig {
    * Les outils en lecture seule continuent de s'exécuter normalement.
    */
   dryRun: boolean;
+  /** Durée maximale d'une mission avant arrêt (ms). 0 = illimité. */
+  missionTimeoutMs: number;
 }
 
 // ─── Schemas Zod ──────────────────────────────────────────────────────────────
@@ -246,4 +248,5 @@ export const DEFAULT_MISSION_CONFIG: MissionConfig = {
   minSkillScore: 25,
   maxConcurrentGoals: 3,
   dryRun: false,
+  missionTimeoutMs: 30 * 60_000, // 30 min par défaut
 };

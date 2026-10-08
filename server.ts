@@ -353,7 +353,16 @@ const { runtime, skillManager, agentic } = bootstrapRuntimeSync({
         }))
       );
 
-      const skillNames = declarations.map((d: any) => d.name);
+      // Liste des outils proposés aux missions autonomes. On EXCLUT les outils
+      // navigateur pilotés par la webview Electron (browser_navigate,
+      // browser_research, browser_read_content, browser_capture, …) : ils
+      // dépendent du contexte UI (emitIdeAction) absent en mission et échouent
+      // systématiquement, gaspillant des tours. On conserve browser_web_search,
+      // qui est 100 % côté serveur (fetch + extraction) et donc utilisable.
+      const MISSION_WEB_TOOL_ALLOWLIST = new Set<string>(["browser_web_search"]);
+      const skillNames = declarations
+        .map((d: any) => d.name)
+        .filter((name: string) => !name.startsWith("browser_") || MISSION_WEB_TOOL_ALLOWLIST.has(name));
 
       // Persistance des missions (Supabase). No-op si non configuré.
       const missionStore = new MissionStore();
@@ -445,7 +454,12 @@ const leannaCore = new LeannaCore(runtimeV2, {
         title: `Autonomy: ${goal.description}`,
         description: goal.description,
         priority: goal.priority,
-        availableSkills: skillManager.getToolDeclarations().map((tool: any) => tool.name),
+        // Même exclusion que le câblage principal : pas d'outil navigateur
+        // dépendant de la webview (seul browser_web_search est serveur).
+        availableSkills: skillManager
+          .getToolDeclarations()
+          .map((tool: any) => tool.name)
+          .filter((name: string) => !name.startsWith("browser_") || name === "browser_web_search"),
         budget: goal.budget,
         dryRun: runtimeV2.tools.getDryRun().isEnabled(),
       });

@@ -414,7 +414,59 @@ export function attachLiveWebSocket(
       const requestedSkills = urlParams.get('skills')?.split(',') || undefined;
       const sessionMode = (urlParams.get('mode') as 'ask' | 'full') || currentProfile.mode || 'full';
       const initialQuery = urlParams.get('q') || urlParams.get('query') || '';
+
+      // ── Rafraîchir les custom skills AVANT de construire le set d'outils ──────
+      // Les custom skills sont chargés en arrière-plan au boot puis rafraîchis
+      // seulement toutes les 30 s. Sans ce refresh, une session qui s'ouvre avant
+      // la fin du chargement initial — ou juste après la création/activation d'un
+      // skill — n'exposerait PAS les outils custom_* au modèle, et l'inspecteur
+      // (snapshot prompt_debug émis une seule fois ici) ne les montrerait pas non
+      // plus. On invalide le cache puis on recharge, de façon best-effort et non
+      // bloquante : loadCustomSkills() ne jette jamais vers l'extérieur.
+      if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        try {
+          const { invalidateCustomSkillsCache } = await import('../skills/customSkills.js');
+          invalidateCustomSkillsCache();
+          await skillManager.loadCustomSkills();
+        } catch (e) {
+          console.warn('[LiveSocket] Rafraîchissement des custom skills ignoré (non bloquant):', (e as Error).message);
+        }
+      }
+
       const declarations = skillManager.getToolDeclarations(requestedSkills);
+
+      // ── Sélection par pertinence des custom skills ───────────────────────────
+      // Quand l'utilisateur a « plein » de custom skills, les injecter tous
+      // explose les tokens et noie le modèle. On ne retient que ceux pertinents
+      // pour la requête/conversation (nom/catégorie/description/paramètres).
+      // Les outils de GESTION (list/create/update/delete_custom_skill) ne sont
+      // pas préfixés `custom_` et restent toujours disponibles ; le modèle peut
+      // donc découvrir et charger n'importe quel skill à la demande.
+      let relevantCustomSkills = new Set<string>();
+      if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        try {
+          const { selectRelevantCustomSkillNamesSemantic } = await import('../skills/customSkills.js');
+          const relevanceQuery = `${initialQuery} ${contextResumeSummary}`.trim();
+          // Sélection sémantique (embeddings) avec repli lexical automatique
+          // intégré. Budget de latence court pour ne pas ralentir l'ouverture
+          // de session ; si les embeddings sont indisponibles, la fonction
+          // retombe sur le scoring lexical.
+          relevantCustomSkills = await selectRelevantCustomSkillNamesSemantic(relevanceQuery, {
+            maxSkills: 8,
+            minSimilarity: 0.25,
+            minScore: 1, // utilisé par le repli lexical
+            timeoutMs: 6000,
+            // Requête vide (session fraîche sans query) : garder un petit noyau
+            // des skills les plus récents pour rester utile sans tout charger.
+            fallbackCount: relevanceQuery.length === 0 ? 5 : 0,
+          });
+        } catch (e) {
+          console.warn('[LiveSocket] Sélection des custom skills pertinents ignorée (non bloquant):', (e as Error).message);
+        }
+      }
+      /** Vrai si ce custom skill a été jugé pertinent (ou si aucun filtrage custom). */
+      const isRelevantCustom = (name: string): boolean =>
+        name.startsWith('custom_') && relevantCustomSkills.has(name);
 
       // ── Tool tier filtering ──────────────────────────────────────────
       const TIER1_CORE_TOOLS = new Set([
@@ -494,7 +546,7 @@ export function attachLiveWebSocket(
       let filteredDeclarations: typeof declarations;
       if (sessionMode === 'ask') {
         filteredDeclarations = declarations.filter(d =>
-          ASK_MODE_ALLOWED_TOOLS.has(d.name) || (d as any)._mcpServerId || d.name.startsWith('custom_'),
+          ASK_MODE_ALLOWED_TOOLS.has(d.name) || (d as any)._mcpServerId || isRelevantCustom(d.name),
         );
       } else {
         const useDynamicRelevance = process.env.FORCE_TIERED_TOOLS !== 'false';
@@ -502,11 +554,12 @@ export function attachLiveWebSocket(
           if (initialQuery.trim().length > 0) {
             const rel = skillManager.getRelevantToolDeclarations(initialQuery, requestedSkills);
             filteredDeclarations = rel.declarations;
-            // Toujours inclure les custom skills même si le score est faible
-            const customDeclarations = declarations.filter(d => d.name.startsWith('custom_') && !filteredDeclarations.some((fd: any) => fd.name === d.name));
+            // Inclure uniquement les custom skills jugés PERTINENTS pour la requête
+            // (plus de force-include systématique de tous les custom_*).
+            const customDeclarations = declarations.filter(d => isRelevantCustom(d.name) && !filteredDeclarations.some((fd: any) => fd.name === d.name));
             filteredDeclarations = [...filteredDeclarations, ...customDeclarations];
           } else {
-            filteredDeclarations = declarations.filter(d => TIER1_CORE_TOOLS.has(d.name) || d.name.startsWith('custom_'));
+            filteredDeclarations = declarations.filter(d => TIER1_CORE_TOOLS.has(d.name) || isRelevantCustom(d.name));
             filteredDeclarations.push({
               name: 'request_tools',
               description: `Demande le chargement d'outils supplémentaires. Catégories: "git", "github", "automation", "lists", "weather", "reasoning", "history", "system", "knowledge", "verify", "security_audit", "guidelines", "selfImprovement", "all".`,

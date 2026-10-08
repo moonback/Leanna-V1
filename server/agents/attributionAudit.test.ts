@@ -79,6 +79,31 @@ describe("auditToolAttribution — classement par branche de cascade", () => {
     // Aucun mot-clé ne matche → aucune piste d'owner.
     assert.equal(report.actionable[0].suggestedOwner, undefined);
   });
+
+  it("attribue DÉTERMINISTE un custom skill (présent ou futur) par catégorie", () => {
+    // Reproduit le crash de boot : custom_control_youtube n'avait aucune
+    // catégorie et faisait échouer l'audit strict. Il doit maintenant être
+    // attribué (source "category"), jamais "unattributed".
+    const report = auditToolAttribution(view(["custom_control_youtube", "custom_tout_autre_skill"]));
+    assert.equal(report.unattributed, 0);
+    assert.equal(report.actionable.length, 0);
+    assert.equal(report.probable, 2);
+    assert.ok(report.entries.every((e) => e.source === "category"));
+  });
+
+  it("attribue aussi les outils de gestion des custom skills", () => {
+    const report = auditToolAttribution(
+      view(["list_custom_skills", "create_custom_skill", "delete_custom_skill"])
+    );
+    assert.equal(report.unattributed, 0);
+    assert.equal(report.actionable.length, 0);
+  });
+
+  it("un boot strict ne crashe plus à cause des custom skills", () => {
+    assert.doesNotThrow(() =>
+      enforceAttribution(view(["custom_control_youtube"]), "strict"),
+    );
+  });
 });
 
 describe("auditToolAttribution — invariant & liste actionnable", () => {

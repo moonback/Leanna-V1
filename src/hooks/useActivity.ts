@@ -45,6 +45,14 @@ export interface ReasoningState {
 
 function toolLabel(tool: string, args?: Record<string, unknown>): string {
   const p = (key: string) => (args?.[key] as string | undefined) ?? '';
+
+  // Skills personnalisés (custom_<nom>) : libellé lisible et distinct, pour que
+  // l'utilisateur voie clairement qu'un de SES skills est utilisé.
+  if (tool.startsWith('custom_')) {
+    const skillName = tool.replace(/^custom_/, '').replace(/_/g, ' ').trim();
+    return `🧩 Skill : ${skillName || tool}`;
+  }
+
   const labels: Record<string, (a: typeof args) => string> = {
     list_project_files:        () => `Explorer ${p('path') || '.'}`,
     read_project_file:         () => `Lire ${p('path')}`,
@@ -81,6 +89,12 @@ function toolLabel(tool: string, args?: Record<string, unknown>): string {
     agent_list_roles:          () => '🤖 Lister les agents disponibles',
     agent_cancel:              () => `🚫 Annuler tâche: ${p('taskId')?.slice(0, 8) || '...'}`,
     agent_stats:               () => '📈 Statistiques agents',
+    // Gestion des skills personnalisés
+    list_custom_skills:        () => '🧩 Lister les skills perso',
+    create_custom_skill:       () => `🧩 Créer skill: ${p('name') || '…'}`,
+    update_custom_skill:       () => `🧩 Modifier skill: ${p('name') || p('id') || '…'}`,
+    delete_custom_skill:       () => `🧩 Supprimer skill: ${p('name') || p('id') || '…'}`,
+    toggle_custom_skill:       () => `🧩 (Dés)activer skill: ${p('name') || p('id') || '…'}`,
   };
   const fn = labels[tool];
   return fn ? fn(args) : tool.replace(/_/g, ' ');

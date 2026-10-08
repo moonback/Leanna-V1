@@ -143,6 +143,12 @@ export class SkillScorer {
     }
   }
 
+  /** Vrai si le scorer possède un historique d'usage réel pour ce skill. */
+  hasUsageHistory(skillName: string): boolean {
+    const stats = this.usageHistory.get(skillName);
+    return !!stats && stats.totalCalls > 0;
+  }
+
   /**
    * Retourne la durée moyenne observée pour un skill (en ms).
    * Si aucun historique n'est disponible, retourne une durée de référence
@@ -165,6 +171,7 @@ export class SkillScorer {
       case "analysis": return 12_000;
       case "system":   return 4_000;
       case "memory":   return 2_000;
+      case "web":      return 6_000; // recherche + lecture réseau
       default:         return 10_000;
     }
   }
@@ -185,6 +192,7 @@ export class SkillScorer {
       case "analysis": return 800;
       case "system":   return 150;
       case "memory":   return 200;
+      case "web":      return 1_000; // sources + extraits de pages
       default:         return 600;
     }
   }
@@ -235,6 +243,16 @@ export class SkillScorer {
       }
       if (goalText.includes("chercher") || goalText.includes("trouver") || goalText.includes("rechercher")) {
         if (category === "search" || category === "read") score += 10;
+      }
+      // Objectif nécessitant une information externe/en ligne → outils web.
+      if (
+        goalText.includes("internet") || goalText.includes("en ligne") ||
+        goalText.includes("online") || goalText.includes(" web") ||
+        goalText.includes("documentation") || goalText.includes("dernière version") ||
+        goalText.includes("latest") || goalText.includes("actualité") ||
+        goalText.includes("google") || goalText.includes("url")
+      ) {
+        if (category === "web") score += 15;
       }
     }
 
@@ -346,6 +364,8 @@ export class SkillScorer {
         return 14; // Commandes système = très peu de tokens
       case "memory":
         return 13;
+      case "web":
+        return 7; // recherche web = sortie modérée (sources + extraits)
       default:
         return 8;
     }
@@ -395,6 +415,20 @@ export class SkillScorer {
       generate_codebase_markdown: { category: "analysis", keywords: ["codebase", "structure", "documenter"] },
       github_list_prs: { category: "read", keywords: ["github", "pr", "pull request"] },
       github_create_issue: { category: "write", keywords: ["github", "issue", "créer"] },
+      // Recherche internet 100 % côté serveur : SEUL outil web utilisable par une
+      // mission autonome (les autres browser_* dépendent de la webview Electron et
+      // échouent sans contexte UI). Mots-clés FR + EN pour matcher les objectifs
+      // décomposés nécessitant une information externe/en ligne.
+      browser_web_search: {
+        category: "web",
+        keywords: [
+          "internet", "web", "en ligne", "online", "rechercher", "recherche",
+          "search", "chercher", "google", "documentation", "doc", "version",
+          "dernière version", "latest", "actualité", "news", "tutoriel",
+          "exemple", "api", "stack overflow", "trouver en ligne", "web search",
+          "research", "sources", "investiguer",
+        ],
+      },
     };
 
     for (const [skill, config] of Object.entries(defaults)) {
@@ -417,7 +451,8 @@ export type SkillCategory =
   | "memory"
   | "analysis"
   | "code"
-  | "communication";
+  | "communication"
+  | "web";
 
 /** Statistiques d'usage d'un skill */
 interface SkillUsageStats {

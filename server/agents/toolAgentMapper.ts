@@ -326,6 +326,18 @@ export const TOOL_CATEGORIES: Record<string, {
     typicalRoles: ['researcher', 'vision'],
     keywords: ['automation', 'browser', 'navigate', 'click', 'screenshot', 'inspect', 'extract'],
   },
+  // Skills personnalisés définis par l'utilisateur (custom_<nom>) + leur gestion
+  // CRUD (list/create/update/delete/toggle_custom_skill). Attribution
+  // DÉTERMINISTE par catégorie : garantit qu'un custom skill — présent ou futur —
+  // n'est jamais « non attribué » (ce qui ferait échouer l'audit strict au boot).
+  // Le segment 'custom' matche tout tool `custom_*` ; 'skill' matche les outils
+  // de gestion `*_custom_skill(s)`.
+  custom: {
+    label: 'Skills personnalisés',
+    description: 'Skills définis par l\'utilisateur et leur gestion',
+    typicalRoles: ['coder', 'writer'],
+    keywords: ['custom', 'skill'],
+  },
   vision: {
     label: 'Analyse visuelle',
     description: 'Analyse de captures d\'écran et perception visuelle',

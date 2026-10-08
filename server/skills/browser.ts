@@ -279,21 +279,32 @@ export function normalizeUrl(raw: string): string {
     return normalized;
   }
 
-  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+  // Un terme libre devient une recherche AFFICHÉE dans la webview. On n'utilise
+  // PAS Google ici : Google refuse de se charger dans une <webview> Electron
+  // (en-têtes anti-framing → ERR_ABORTED -3). Bing, lui, s'affiche normalement.
+  return buildSearchUrl("google", trimmed);
 }
 
+/**
+ * Construit l'URL de recherche pour le navigateur INTÉGRÉ (webview).
+ *
+ * Contrainte clé : Google bloque son chargement dans une <webview>/iframe
+ * (ERR_ABORTED -3 côté Electron). On route donc toute demande "google" (et le
+ * défaut) vers Bing, qui tolère le framing et rend une page de résultats
+ * exploitable par browser_get_links/browser_read_content. Pour une recherche
+ * SANS webview (fetch serveur), utiliser browser_web_search à la place.
+ */
 function buildSearchUrl(engine: string, query: string): string {
   const q = encodeURIComponent(query);
   switch (engine) {
-    case "bing":
-      return `https://www.bing.com/search?q=${q}`;
     case "duckduckgo":
       return `https://duckduckgo.com/html/?q=${q}`;
     case "wikipedia":
       return `https://fr.wikipedia.org/w/index.php?search=${q}`;
-    case "google":
+    case "bing":
+    case "google": // Google ne se charge pas en webview → repli Bing.
     default:
-      return `https://www.google.com/search?q=${q}`;
+      return `https://www.bing.com/search?q=${q}`;
   }
 }
 
@@ -347,6 +358,47 @@ export function isSponsoredLink(text: string, href: string): boolean {
   if (SPONSOR_TEXT_RE.test(text)) return true;
   if (TRACKING_PARAM_RE.test(href)) return true;
   return false;
+}
+
+/** Mots vides FR + EN retirés lors de la condensation d'une requête web. */
+const SEARCH_STOPWORDS = new Set<string>([
+  "le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "ou", "à", "au",
+  "aux", "en", "dans", "sur", "pour", "par", "avec", "sans", "ses", "son", "sa",
+  "ce", "cette", "ces", "qui", "que", "quoi", "dont", "est", "sont", "actuelle",
+  "actuel", "officielle", "officiel", "ainsi", "notamment", "concernant",
+  "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "about",
+  "current", "official", "latest", "please", "find", "search", "regarding",
+]);
+
+/**
+ * Condense une requête LLM (souvent une phrase/paragraphe) en une courte liste
+ * de mots-clés exploitables par un moteur de recherche. Conserve l'ordre, retire
+ * la ponctuation et les mots vides, borne le nombre de termes et la longueur.
+ */
+export function condenseSearchQuery(raw: string, maxTerms = 12): string {
+  if (!raw) return "";
+  // Première phrase seulement : coupe au premier ":" ou "." qui termine une idée.
+  const firstChunk = raw.split(/[:\n]/)[0] ?? raw;
+  const tokens = firstChunk
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s.#+-]/gu, " ") // garde lettres/chiffres et . # + - (ex: gemini-3.1)
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  for (const tok of tokens) {
+    const t = tok.replace(/^[.+-]+|[.+-]+$/g, "");
+    if (t.length < 2) continue;
+    if (SEARCH_STOPWORDS.has(t)) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    kept.push(tok);
+    if (kept.length >= maxTerms) break;
+  }
+  const condensed = kept.join(" ").trim();
+  // Repli : si la condensation vide tout, garder un préfixe raisonnable.
+  return condensed.length > 0 ? condensed.slice(0, 200) : raw.trim().slice(0, 120);
 }
 
 export function rankLinkCandidates(
@@ -415,7 +467,7 @@ const searchEngineEnum = z.enum(["google", "bing", "duckduckgo", "wikipedia"]);
 
 const searchSchema = z.object({
   query: z.string().min(1, "Requête de recherche requise"),
-  engine: searchEngineEnum.optional().default("google"),
+  engine: searchEngineEnum.optional().default("bing"),
 });
 
 const scrollSchema = z.object({
@@ -464,7 +516,7 @@ const openLinkSchema = z
 
 const researchSchema = z.object({
   query: z.string().min(1, "Requête de recherche requise"),
-  engine: searchEngineEnum.optional().default("google"),
+  engine: searchEngineEnum.optional().default("bing"),
   maxSources: z.number().int().positive().max(5).default(3),
 });
 
@@ -554,7 +606,7 @@ export const browserSkill: Skill = {
         properties: {
           url: {
             type: "STRING",
-            description: "L'URL à visiter (ex: https://example.com). Peut être une URL complète, un domaine, ou un terme de recherche (sera automatiquement converti en recherche Google).",
+            description: "L'URL à visiter (ex: https://example.com). Peut être une URL complète, un domaine, ou un terme de recherche (converti en recherche web affichée dans le navigateur ; Google n'étant pas chargeable en webview, un autre moteur est utilisé). Pour une recherche rapide côté serveur sans navigateur, préfère browser_web_search.",
           },
         },
         required: ["url"],
@@ -582,7 +634,7 @@ export const browserSkill: Skill = {
           },
           engine: {
             type: "STRING",
-            description: "Moteur de recherche : 'google' (défaut), 'bing', 'duckduckgo', ou 'wikipedia'.",
+            description: "Moteur de recherche : 'bing' (défaut), 'duckduckgo', ou 'wikipedia'. Note : 'google' est accepté mais rendu via Bing car Google ne se charge pas dans le navigateur intégré.",
           },
         },
         required: ["query"],
@@ -771,7 +823,7 @@ export const browserSkill: Skill = {
           },
           engine: {
             type: "STRING",
-            description: "Moteur : 'google' (défaut), 'bing', 'duckduckgo', 'wikipedia'.",
+            description: "Moteur : 'bing' (défaut), 'duckduckgo', 'wikipedia'. ('google' est accepté mais rendu via Bing — non chargeable en webview.)",
           },
           maxSources: {
             type: "NUMBER",
@@ -1579,14 +1631,32 @@ export const browserSkill: Skill = {
       const { query, maxSources, read } = validateArgs(browserSkill.inputSchemas!["browser_web_search"], args);
       const provider = createWebSearchProvider();
 
-      let hits;
-      try {
-        hits = await provider.search(query, Math.max(maxSources * 2, 8));
-      } catch (err: any) {
+      // Les requêtes générées par un LLM sont souvent des phrases/paragraphes
+      // entiers : les moteurs (DuckDuckGo HTML) renvoient alors peu ou pas de
+      // résultats. On interroge d'abord avec la requête condensée (mots-clés),
+      // puis on retente avec une version encore plus courte avant d'abandonner.
+      const condensed = condenseSearchQuery(query);
+      const attempts = Array.from(new Set([
+        condensed,
+        condenseSearchQuery(query, 6),
+      ].filter((q) => q.length > 0)));
+      if (attempts.length === 0) attempts.push(query.slice(0, 120));
+
+      let hits: Awaited<ReturnType<typeof provider.search>> = [];
+      let lastErr: unknown = null;
+      for (const attempt of attempts) {
+        try {
+          hits = await provider.search(attempt, Math.max(maxSources * 2, 8));
+          if (hits.length > 0) break;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      if (hits.length === 0 && lastErr) {
         return {
           status: "error",
           query,
-          message: `Recherche web impossible : ${err?.message ?? "erreur inconnue"}. Essaie browser_research (via la webview) en repli.`,
+          message: `Recherche web impossible : ${(lastErr as Error)?.message ?? "erreur inconnue"}.`,
         };
       }
 
