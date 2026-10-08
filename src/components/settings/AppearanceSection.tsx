@@ -1,16 +1,20 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Palette, Check, Moon, Sun, Zap, BookOpen, Eye } from 'lucide-react';
+import { Palette, Check, Moon, Sun, Zap, BookOpen, Eye, Pipette } from 'lucide-react';
 import { useProfile } from '../../context/UserProfileContext.js';
 import { Section, Field, ToggleSwitch } from './SettingsPrimitives.js';
 import { ACCENTS, FONTS } from './constants.js';
 
-// Additional accent colors with labels
+// Palette d'accents : les 5 de base (tokens) + variantes distinctes en hex.
+// (Les anciennes entrées « Indigo/Teal/Orange » réutilisaient des tokens déjà
+//  présents — elles produisaient des pastilles visuellement identiques.)
 const EXTENDED_ACCENTS = [
   ...ACCENTS,
-  { label: 'Indigo', value: 'var(--color-accent-alt)' },
-  { label: 'Teal',   value: 'var(--color-info)' },
-  { label: 'Orange', value: 'var(--color-warning)' },
+  { label: 'Indigo',  value: '#6366f1' },
+  { label: 'Teal',    value: '#14b8a6' },
+  { label: 'Orange',  value: '#f97316' },
+  { label: 'Fuchsia', value: '#d946ef' },
+  { label: 'Lime',    value: '#84cc16' },
 ];
 
 export function AppearanceSection() {
@@ -25,6 +29,14 @@ export function AppearanceSection() {
     setField('fontFamily', font);
     document.documentElement.style.setProperty('--font-sans', font);
   }, [setField]);
+
+  // La couleur courante est « personnalisée » si elle ne figure pas dans la palette.
+  const isCustomAccent = useMemo(
+    () => !EXTENDED_ACCENTS.some(a => a.value === profile.accentColor),
+    [profile.accentColor],
+  );
+  // Valeur hex pour <input type="color"> (ne gère pas les var(...) : fallback).
+  const customHex = /^#[0-9a-fA-F]{6}$/.test(profile.accentColor) ? profile.accentColor : '#0ea5e9';
 
   return (
     <Section
@@ -81,7 +93,7 @@ export function AppearanceSection() {
 
       {/* Accent color */}
       <Field label="Couleur d'accent" hint="Appliquée immédiatement à toute l'interface.">
-        <div className="flex flex-wrap gap-2.5 items-center">
+        <div className="flex flex-wrap gap-2.5 items-start">
           {EXTENDED_ACCENTS.map(a => {
             const isActive = profile.accentColor === a.value;
             return (
@@ -118,7 +130,39 @@ export function AppearanceSection() {
               </div>
             );
           })}
+
+          {/* Sélecteur personnalisé */}
+          <div className="relative flex flex-col items-center gap-1">
+            <label
+              htmlFor="accent-custom-color"
+              className="relative flex h-8 w-8 flex-shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full transition-all duration-200"
+              style={{
+                background: 'conic-gradient(from 180deg, #ef4444, #f59e0b, #84cc16, #14b8a6, #0ea5e9, #6366f1, #d946ef, #ef4444)',
+                outline: isCustomAccent ? `3px solid ${profile.accentColor}` : 'none',
+                outlineOffset: 2.5,
+                boxShadow: '0 2px 6px rgba(0,0,0,0.25)',
+              }}
+              title="Couleur personnalisée"
+            >
+              <Pipette className="h-3.5 w-3.5 text-white drop-shadow" />
+              <input
+                id="accent-custom-color"
+                type="color"
+                value={customHex}
+                onChange={e => applyAccent(e.target.value)}
+                className="absolute inset-0 cursor-pointer opacity-0"
+                aria-label="Choisir une couleur d'accent personnalisée"
+              />
+            </label>
+            <span className="text-xs" style={{ color: 'var(--text-dimmed)' }}>Perso</span>
+          </div>
         </div>
+
+        {isCustomAccent && (
+          <span className="mt-1.5 inline-block font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+            {profile.accentColor}
+          </span>
+        )}
       </Field>
 
       {/* Font family */}
@@ -153,6 +197,16 @@ export function AppearanceSection() {
               </motion.button>
             );
           })}
+        </div>
+        {/* Aperçu de la police sélectionnée */}
+        <div
+          className="mt-2 rounded-xl border px-3 py-2.5"
+          style={{ borderColor: 'var(--border-base)', backgroundColor: 'var(--bg-secondary)' }}
+        >
+          <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--text-dimmed)' }}>Aperçu</p>
+          <p className="mt-0.5 text-sm" style={{ fontFamily: profile.fontFamily, color: 'var(--text-primary)' }}>
+            The quick brown fox — 0123456789
+          </p>
         </div>
       </Field>
 

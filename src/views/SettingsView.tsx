@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search, RotateCcw, Save, ChevronRight, Settings2,
@@ -75,6 +75,9 @@ const NAV_GROUPS = [
   },
 ];
 
+const SECURE_ITEMS = new Set(['selfroot-settings', 'safeguards-settings', 'env-settings']);
+const LAST_SECTION_KEY = 'Leanna-settings-last-section';
+
 function getActiveLabel(id: string) {
   for (const g of NAV_GROUPS) {
     const found = g.items.find(i => i.id === id);
@@ -83,22 +86,81 @@ function getActiveLabel(id: string) {
   return { group: '', label: id, Icon: Settings2 };
 }
 
+/** Surligne la portion correspondant à la recherche dans un libellé. */
+function Highlight({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark
+        className="rounded-sm px-0.5"
+        style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--accent-primary)' }}
+      >
+        {text.slice(idx, idx + q.length)}
+      </mark>
+      {text.slice(idx + q.length)}
+    </>
+  );
+}
+
 export default function SettingsView() {
   const navigate = useNavigate();
-  const searchParams = new URLSearchParams(window.location.search);
+  const [searchParams, setSearchParams] = useSearchParams();
   const { profile, save, reset } = useProfile();
   const { success, error: toastError } = useToast();
   const [saving, setSaving] = useState(false);
-  const requestedSection = searchParams.get('section');
-  const [activeSection, setActiveSection] = useState(
-    requestedSection || 'profile-settings',
-  );
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Section initiale : URL > dernière section mémorisée > profil.
+  const [activeSection, setActiveSection] = useState(() => {
+    const fromUrl = searchParams.get('section');
+    if (fromUrl) return fromUrl;
+    if (typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem(LAST_SECTION_KEY);
+      if (stored) return stored;
+    }
+    return 'profile-settings';
+  });
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Suit les changements d'URL (navigation router-aware).
   useEffect(() => {
     const sec = searchParams.get('section');
-    if (sec) setActiveSection(sec);
-  }, [window.location.search]);
+    if (sec && sec !== activeSection) setActiveSection(sec);
+  }, [searchParams, activeSection]);
+
+  // Change de section : met à jour l'état, l'URL et la mémoire locale.
+  const selectSection = useCallback((id: string) => {
+    setActiveSection(id);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('section', id);
+      return next;
+    }, { replace: true });
+    try { localStorage.setItem(LAST_SECTION_KEY, id); } catch { /* ignore */ }
+  }, [setSearchParams]);
+
+  // Raccourcis clavier : "/" ou Ctrl/Cmd+F pour focus la recherche, Échap pour effacer.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (!typing && e.key === '/') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      } else if (e.key === 'Escape' && target === searchInputRef.current) {
+        setSearchQuery('');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -148,6 +210,30 @@ export default function SettingsView() {
     }).filter(group => group.items.length > 0);
   }, [searchQuery]);
 
+  // Liste à plat des éléments visibles (navigation clavier + compteur).
+  const flatItems = useMemo(
+    () => filteredNavGroups.flatMap(g => g.items),
+    [filteredNavGroups],
+  );
+
+  // Navigation clavier dans la recherche : ↑/↓ pour parcourir, Entrée pour ouvrir.
+  const onSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (flatItems.length === 0) return;
+    const currentIdx = flatItems.findIndex(i => i.id === activeSection);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = flatItems[(currentIdx + 1 + flatItems.length) % flatItems.length];
+      selectSection(next.id);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = flatItems[(currentIdx - 1 + flatItems.length) % flatItems.length];
+      selectSection(prev.id);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      selectSection(flatItems[Math.max(0, currentIdx)].id);
+    }
+  }, [flatItems, activeSection, selectSection]);
+
   const active = getActiveLabel(activeSection);
 
   return (
@@ -190,10 +276,13 @@ export default function SettingsView() {
           <div className="relative flex items-center">
             <Search className="absolute left-2.5 h-3.5 w-3.5 opacity-50" style={{ color: 'var(--text-muted)' }} />
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Rechercher..."
+              onKeyDown={onSearchKeyDown}
+              placeholder="Rechercher…  ( / )"
+              aria-label="Rechercher un réglage"
               className="w-full rounded-xl border px-8 py-2 text-xs font-sans outline-none transition-all"
               style={{
                 backgroundColor: 'var(--bg-input)',
@@ -212,23 +301,33 @@ export default function SettingsView() {
             />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => { setSearchQuery(''); searchInputRef.current?.focus(); }}
                 className="absolute right-2.5 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100"
+                aria-label="Effacer la recherche"
               >
                 <X className="h-3 w-3" />
               </button>
             )}
           </div>
+          {searchQuery.trim() && (
+            <p className="mt-1.5 px-1 text-xs" style={{ color: 'var(--text-dimmed)' }}>
+              {flatItems.length} résultat{flatItems.length > 1 ? 's' : ''} · ↑↓ pour naviguer, Entrée pour ouvrir
+            </p>
+          )}
         </div>
 
         {/* Navigation list */}
         <div className="flex-1 overflow-y-auto custom-scrollbar px-2.5 pb-4 space-y-4">
           {filteredNavGroups.map(group => (
             <div key={group.label} className="space-y-1">
-              <p className="px-2 text-xs font-bold uppercase tracking-wider"
-                style={{ color: 'var(--text-dimmed)' }}>
-                {group.label}
-              </p>
+              <div className="flex items-center justify-between px-2">
+                <p className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--text-dimmed)' }}>
+                  {group.label}
+                </p>
+                <span className="text-xs font-mono" style={{ color: 'var(--text-dimmed)', opacity: 0.6 }}>
+                  {group.items.length}
+                </span>
+              </div>
               <div className="space-y-0.5">
                 {group.items.map(({ id, icon: Icon, label }) => {
                   const isActive = activeSection === id;
@@ -236,7 +335,8 @@ export default function SettingsView() {
                     <button
                       key={id}
                       type="button"
-                      onClick={() => setActiveSection(id)}
+                      onClick={() => selectSection(id)}
+                      aria-current={isActive ? 'page' : undefined}
                       className="group relative flex w-full items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left transition-all duration-100"
                       style={{
                         backgroundColor: isActive ? 'var(--btn-active-bg)' : 'transparent',
@@ -260,11 +360,11 @@ export default function SettingsView() {
                         style={{ color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)' }}
                       />
                       <span className="text-xs font-medium truncate">
-                        {label}
+                        <Highlight text={label} query={searchQuery} />
                       </span>
 
                       {/* Security badge for self-root related items */}
-                      {(id === 'selfroot-settings' || id === 'safeguards-settings' || id === 'env-settings') && (
+                      {SECURE_ITEMS.has(id) && (
                         <span className="ml-auto rounded px-1 py-0.5 text-xs font-bold"
                           style={{
                             backgroundColor: 'color-mix(in srgb, #10b981 12%, transparent)',

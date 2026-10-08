@@ -2,7 +2,7 @@ import { motion } from 'motion/react';
 import {
   Bot, Code2, Sparkles, Bug, CheckCheck, FlaskConical, ShieldAlert, Network,
   PenTool, AlignLeft, Search, SpellCheck, Languages, FileText, ListTree,
-  UserRoundCog, RefreshCw, Palette, TrendingUp, BookOpen, Accessibility, Gauge,
+  UserRoundCog, RefreshCw, Palette, TrendingUp, BookOpen, Accessibility, Gauge, X,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useProfile } from '../../context/UserProfileContext.js';
@@ -17,6 +17,58 @@ interface AgentRoleMeta {
   color: string;
   category: 'code' | 'docs' | 'web' | 'custom';
   isCustom?: boolean;
+}
+
+// ─── Carte d'agent réutilisable (évite 4× la même markup) ─────────────────────
+
+function AgentCard({ role, isActive, onToggle }: {
+  role: AgentRoleMeta; isActive: boolean; onToggle: (id: AgentRole) => void;
+}) {
+  const Icon = role.icon;
+  return (
+    <motion.button
+      type="button"
+      onClick={() => onToggle(role.id)}
+      whileHover={{ y: -1, scale: 1.01 }}
+      whileTap={{ scale: 0.97 }}
+      className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all duration-200"
+      style={{
+        backgroundColor: isActive ? `color-mix(in srgb, ${role.color} 8%, transparent)` : 'var(--bg-secondary)',
+        border: `1.5px solid ${isActive ? role.color + '60' : 'var(--border-base)'}`,
+        boxShadow: isActive ? `0 2px 8px ${role.color}15` : 'none',
+      }}
+      aria-pressed={isActive}
+      aria-label={`${isActive ? 'Désactiver' : 'Activer'} l'agent ${role.label}`}
+    >
+      <div
+        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-all duration-200"
+        style={{
+          backgroundColor: isActive ? `color-mix(in srgb, ${role.color} 15%, transparent)` : 'var(--bg-panel)',
+          border: `1px solid ${isActive ? role.color + '40' : 'var(--border-base)'}`,
+        }}
+      >
+        <Icon style={{ width: 16, height: 16, color: isActive ? role.color : 'var(--text-dimmed)' }} />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-semibold truncate transition-colors duration-200"
+          style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          {role.label}
+        </div>
+        <div className="text-xs truncate leading-tight transition-colors duration-200"
+          style={{ color: isActive ? 'var(--text-muted)' : 'var(--text-dimmed)' }}>
+          {role.desc}
+        </div>
+      </div>
+
+      <div className="h-2 w-2 flex-shrink-0 rounded-full transition-all duration-200"
+        style={{
+          backgroundColor: isActive ? role.color : 'var(--border-base)',
+          boxShadow: isActive ? `0 0 6px ${role.color}60` : 'none',
+        }}
+      />
+    </motion.button>
+  );
 }
 
 const STATIC_AGENT_ROLES_META: AgentRoleMeta[] = [
@@ -54,6 +106,7 @@ export function AgentsSection() {
   const [customAgents, setCustomAgents] = useState<CustomAgentConfig[]>([]);
   const [loadingCustom, setLoadingCustom] = useState(true);
   const [errorCustom, setErrorCustom] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
 
   // Charger les agents personnalisés depuis l'API
   const loadCustomAgents = useCallback(async () => {
@@ -130,10 +183,25 @@ export function AgentsSection() {
   const activeCount = agents.allowedRoles.length;
   const totalCount = allAgentsMeta.length;
 
+  // Filtre de recherche appliqué à toutes les catégories.
+  const matches = useCallback((r: AgentRoleMeta) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return r.label.toLowerCase().includes(q) ||
+      r.desc.toLowerCase().includes(q) ||
+      String(r.id).toLowerCase().includes(q);
+  }, [query]);
+
   const codeRoles = allAgentsMeta.filter(r => r.category === 'code');
   const docsRoles = allAgentsMeta.filter(r => r.category === 'docs');
   const webRoles  = allAgentsMeta.filter(r => r.category === 'web');
   const customRoles = allAgentsMeta.filter(r => r.category === 'custom');
+
+  const fCode = codeRoles.filter(matches);
+  const fDocs = docsRoles.filter(matches);
+  const fWeb = webRoles.filter(matches);
+  const fCustom = customRoles.filter(matches);
+  const noMatches = query.trim() !== '' && fCode.length + fDocs.length + fWeb.length + fCustom.length === 0;
 
   return (
     <Section
@@ -263,258 +331,79 @@ export function AgentsSection() {
             </span>
           </div>
 
-          {/* Section: Code & Développement */}
-          <SectionDivider label="Code & Ingénierie Logicielle" />
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {codeRoles.map(role => {
-              const isActive = agents.allowedRoles.includes(role.id);
-              const Icon = role.icon;
-
-              return (
-                <motion.button
-                  key={role.id}
-                  type="button"
-                  onClick={() => toggleRole(role.id)}
-                  whileHover={{ y: -1, scale: 1.01 }}
-                  whileTap={{ scale: 0.97 }}
-                  className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all duration-200"
-                  style={{
-                    backgroundColor: isActive ? `color-mix(in srgb, ${role.color} 8%, transparent)` : 'var(--bg-secondary)',
-                    border: `1.5px solid ${isActive ? role.color + '60' : 'var(--border-base)'}`,
-                    boxShadow: isActive ? `0 2px 8px ${role.color}15` : 'none',
-                  }}
-                  aria-pressed={isActive}
-                  aria-label={`${isActive ? 'Désactiver' : 'Activer'} l'agent ${role.label}`}
-                >
-                  <div
-                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-all duration-200"
-                    style={{
-                      backgroundColor: isActive ? `color-mix(in srgb, ${role.color} 15%, transparent)` : 'var(--bg-panel)',
-                      border: `1px solid ${isActive ? role.color + '40' : 'var(--border-base)'}`,
-                    }}
-                  >
-                    <Icon
-                      style={{ width: 16, height: 16, color: isActive ? role.color : 'var(--text-dimmed)' }}
-                    />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div
-                      className="text-xs font-semibold truncate transition-colors duration-200"
-                      style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
-                    >
-                      {role.label}
-                    </div>
-                    <div
-                      className="text-xs truncate leading-tight transition-colors duration-200"
-                      style={{ color: isActive ? 'var(--text-muted)' : 'var(--text-dimmed)' }}
-                    >
-                      {role.desc}
-                    </div>
-                  </div>
-
-                  <div
-                    className="h-2 w-2 flex-shrink-0 rounded-full transition-all duration-200"
-                    style={{
-                      backgroundColor: isActive ? role.color : 'var(--border-base)',
-                      boxShadow: isActive ? `0 0 6px ${role.color}60` : 'none',
-                    }}
-                  />
-                </motion.button>
-              );
-            })}
+          {/* Recherche d'agent */}
+          <div className="relative flex items-center">
+            <Search className="absolute left-2.5 h-3.5 w-3.5 opacity-50" style={{ color: 'var(--text-muted)' }} />
+            <input
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Rechercher un agent…"
+              className="w-full rounded-xl border px-8 py-2 text-xs outline-none transition-all"
+              style={{ backgroundColor: 'var(--bg-input)', borderColor: 'var(--border-base)', color: 'var(--text-primary)' }}
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-2.5 opacity-50 hover:opacity-100"
+                style={{ color: 'var(--text-muted)' }}
+                aria-label="Effacer la recherche"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
+
+          {noMatches && (
+            <p className="py-4 text-center text-xs" style={{ color: 'var(--text-dimmed)' }}>
+              Aucun agent ne correspond à « {query} ».
+            </p>
+          )}
+
+          {/* Section: Code & Développement */}
+          {fCode.length > 0 && (
+            <>
+              <SectionDivider label="Code & Ingénierie Logicielle" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {fCode.map(role => (
+                  <AgentCard key={role.id} role={role} isActive={agents.allowedRoles.includes(role.id)} onToggle={toggleRole} />
+                ))}
+              </div>
+            </>
+          )}
 
           {/* Section: Rédaction & Documents */}
-          <SectionDivider label="Rédaction & Documentation" />
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {docsRoles.map(role => {
-              const isActive = agents.allowedRoles.includes(role.id);
-              const Icon = role.icon;
-
-              return (
-                <motion.button
-                  key={role.id}
-                  type="button"
-                  onClick={() => toggleRole(role.id)}
-                  whileHover={{ y: -1, scale: 1.01 }}
-                  whileTap={{ scale: 0.97 }}
-                  className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all duration-200"
-                  style={{
-                    backgroundColor: isActive ? `color-mix(in srgb, ${role.color} 8%, transparent)` : 'var(--bg-secondary)',
-                    border: `1.5px solid ${isActive ? role.color + '60' : 'var(--border-base)'}`,
-                    boxShadow: isActive ? `0 2px 8px ${role.color}15` : 'none',
-                  }}
-                  aria-pressed={isActive}
-                  aria-label={`${isActive ? 'Désactiver' : 'Activer'} l'agent ${role.label}`}
-                >
-                  <div
-                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-all duration-200"
-                    style={{
-                      backgroundColor: isActive ? `color-mix(in srgb, ${role.color} 15%, transparent)` : 'var(--bg-panel)',
-                      border: `1px solid ${isActive ? role.color + '40' : 'var(--border-base)'}`,
-                    }}
-                  >
-                    <Icon
-                      style={{ width: 16, height: 16, color: isActive ? role.color : 'var(--text-dimmed)' }}
-                    />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div
-                      className="text-xs font-semibold truncate transition-colors duration-200"
-                      style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
-                    >
-                      {role.label}
-                    </div>
-                    <div
-                      className="text-xs truncate leading-tight transition-colors duration-200"
-                      style={{ color: isActive ? 'var(--text-muted)' : 'var(--text-dimmed)' }}
-                    >
-                      {role.desc}
-                    </div>
-                  </div>
-
-                  <div
-                    className="h-2 w-2 flex-shrink-0 rounded-full transition-all duration-200"
-                    style={{
-                      backgroundColor: isActive ? role.color : 'var(--border-base)',
-                      boxShadow: isActive ? `0 0 6px ${role.color}60` : 'none',
-                    }}
-                  />
-                </motion.button>
-              );
-            })}
-          </div>
+          {fDocs.length > 0 && (
+            <>
+              <SectionDivider label="Rédaction & Documentation" />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {fDocs.map(role => (
+                  <AgentCard key={role.id} role={role} isActive={agents.allowedRoles.includes(role.id)} onToggle={toggleRole} />
+                ))}
+              </div>
+            </>
+          )}
 
           {/* Section: Web & Qualité */}
-          {webRoles.length > 0 && (
+          {fWeb.length > 0 && (
             <>
               <SectionDivider label="Web & Qualité" />
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {webRoles.map(role => {
-                  const isActive = agents.allowedRoles.includes(role.id);
-                  const Icon = role.icon;
-
-                  return (
-                    <motion.button
-                      key={role.id}
-                      type="button"
-                      onClick={() => toggleRole(role.id)}
-                      whileHover={{ y: -1, scale: 1.01 }}
-                      whileTap={{ scale: 0.97 }}
-                      className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all duration-200"
-                      style={{
-                        backgroundColor: isActive ? `color-mix(in srgb, ${role.color} 8%, transparent)` : 'var(--bg-secondary)',
-                        border: `1.5px solid ${isActive ? role.color + '60' : 'var(--border-base)'}`,
-                        boxShadow: isActive ? `0 2px 8px ${role.color}15` : 'none',
-                      }}
-                      aria-pressed={isActive}
-                      aria-label={`${isActive ? 'Désactiver' : 'Activer'} l'agent ${role.label}`}
-                    >
-                      <div
-                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-all duration-200"
-                        style={{
-                          backgroundColor: isActive ? `color-mix(in srgb, ${role.color} 15%, transparent)` : 'var(--bg-panel)',
-                          border: `1px solid ${isActive ? role.color + '40' : 'var(--border-base)'}`,
-                        }}
-                      >
-                        <Icon
-                          style={{ width: 16, height: 16, color: isActive ? role.color : 'var(--text-dimmed)' }}
-                        />
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div
-                          className="text-xs font-semibold truncate transition-colors duration-200"
-                          style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
-                        >
-                          {role.label}
-                        </div>
-                        <div
-                          className="text-xs truncate leading-tight transition-colors duration-200"
-                          style={{ color: isActive ? 'var(--text-muted)' : 'var(--text-dimmed)' }}
-                        >
-                          {role.desc}
-                        </div>
-                      </div>
-
-                      <div
-                        className="h-2 w-2 flex-shrink-0 rounded-full transition-all duration-200"
-                        style={{
-                          backgroundColor: isActive ? role.color : 'var(--border-base)',
-                          boxShadow: isActive ? `0 0 6px ${role.color}60` : 'none',
-                        }}
-                      />
-                    </motion.button>
-                  );
-                })}
+                {fWeb.map(role => (
+                  <AgentCard key={role.id} role={role} isActive={agents.allowedRoles.includes(role.id)} onToggle={toggleRole} />
+                ))}
               </div>
             </>
           )}
 
           {/* Section: Agents Personnalisés */}
-          {customRoles.length > 0 && (
+          {fCustom.length > 0 && (
             <>
               <SectionDivider label="Personnalisés" />
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {customRoles.map(role => {
-                  const isActive = agents.allowedRoles.includes(role.id);
-                  const Icon = role.icon;
-
-                  return (
-                    <motion.button
-                      key={role.id}
-                      type="button"
-                      onClick={() => toggleRole(role.id)}
-                      whileHover={{ y: -1, scale: 1.01 }}
-                      whileTap={{ scale: 0.97 }}
-                      className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-all duration-200"
-                      style={{
-                        backgroundColor: isActive ? `color-mix(in srgb, ${role.color} 8%, transparent)` : 'var(--bg-secondary)',
-                        border: `1.5px solid ${isActive ? role.color + '60' : 'var(--border-base)'}`,
-                        boxShadow: isActive ? `0 2px 8px ${role.color}15` : 'none',
-                      }}
-                      aria-pressed={isActive}
-                      aria-label={`${isActive ? 'Désactiver' : 'Activer'} l'agent ${role.label}`}
-                    >
-                      <div
-                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-all duration-200"
-                        style={{
-                          backgroundColor: isActive ? `color-mix(in srgb, ${role.color} 15%, transparent)` : 'var(--bg-panel)',
-                          border: `1px solid ${isActive ? role.color + '40' : 'var(--border-base)'}`,
-                        }}
-                      >
-                        <Icon
-                          style={{ width: 16, height: 16, color: isActive ? role.color : 'var(--text-dimmed)' }}
-                        />
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div
-                          className="text-xs font-semibold truncate transition-colors duration-200"
-                          style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-muted)' }}
-                        >
-                          {role.label}
-                        </div>
-                        <div
-                          className="text-xs truncate leading-tight transition-colors duration-200"
-                          style={{ color: isActive ? 'var(--text-muted)' : 'var(--text-dimmed)' }}
-                        >
-                          {role.desc}
-                        </div>
-                      </div>
-
-                      <div
-                        className="h-2 w-2 flex-shrink-0 rounded-full transition-all duration-200"
-                        style={{
-                          backgroundColor: isActive ? role.color : 'var(--border-base)',
-                          boxShadow: isActive ? `0 0 6px ${role.color}60` : 'none',
-                        }}
-                      />
-                    </motion.button>
-                  );
-                })}
+                {fCustom.map(role => (
+                  <AgentCard key={role.id} role={role} isActive={agents.allowedRoles.includes(role.id)} onToggle={toggleRole} />
+                ))}
               </div>
             </>
           )}

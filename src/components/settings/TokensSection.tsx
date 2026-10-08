@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Key, Plus, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
-import { Section } from './SettingsPrimitives.js';
+import {
+  Key, Plus, Trash2, ToggleLeft, ToggleRight, X, CheckCircle2, AlertCircle, Loader2,
+} from 'lucide-react';
+import { Section, SecretInput } from './SettingsPrimitives.js';
 
 interface TokenInfo {
   key: string; label: string; configured: boolean; valid: boolean | null; preview: string;
@@ -26,7 +28,20 @@ export function TokensSection() {
   const [newKeyLabel, setNewKeyLabel] = useState('');
   const [addingKey, setAddingKey] = useState(false);
 
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   React.useEffect(() => { fetchTokens(); fetchGeminiKeys(); }, []);
+
+  // Auto-dismiss des messages de succès.
+  useEffect(() => {
+    if (feedback?.type === 'success') {
+      if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+      feedbackTimer.current = setTimeout(() => setFeedback(null), 3500);
+    }
+    return () => { if (feedbackTimer.current) clearTimeout(feedbackTimer.current); };
+  }, [feedback]);
+
+  const activeGeminiCount = geminiKeys.filter(k => !k.disabled).length;
 
   const fetchTokens = async () => {
     setLoading(true);
@@ -104,24 +119,38 @@ export function TokensSection() {
   if (loading) {
     return (
       <Section icon={Key} title="Tokens & Clés API" description="Gérez vos clés d'API pour les services connectés">
-        <div className="flex items-center justify-center py-6">
-          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-            className="h-4 w-4 rounded-full border-2"
-            style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+        <div className="flex items-center justify-center gap-2 py-6">
+          <Loader2 className="h-4 w-4 animate-spin" style={{ color: 'var(--accent-primary)' }} />
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Chargement des clés…</span>
         </div>
       </Section>
     );
   }
 
   return (
-    <Section icon={Key} title="Tokens & Clés API" description="Gérez vos clés d'API pour les services connectés">
+    <Section
+      icon={Key}
+      title="Tokens & Clés API"
+      description="Gérez vos clés d'API pour les services connectés"
+      badge={`${tokens.filter(t => t.configured).length}/${tokens.length} configurés`}
+    >
       {/* ─── Gemini Key Pool ─── */}
       <div className="mb-4 rounded-xl p-3" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-base)' }}>
         <div className="flex items-center justify-between mb-2">
           <div>
-            <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Pool de clés Gemini
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Pool de clés Gemini
+              </span>
+              {geminiKeys.length > 0 && (
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-xs font-mono font-semibold"
+                  style={{ backgroundColor: 'var(--accent-subtle)', color: 'var(--accent-primary)' }}
+                >
+                  {activeGeminiCount}/{geminiKeys.length} actives
+                </span>
+              )}
+            </div>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               Rotation automatique en cas de rate-limit (429)
             </p>
@@ -141,13 +170,15 @@ export function TokensSection() {
               exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
               <div className="flex flex-col gap-2 mt-2 mb-3 p-2.5 rounded-lg" style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-base)' }}>
                 <input type="text" value={newKeyLabel} onChange={e => setNewKeyLabel(e.target.value)}
-                  placeholder="Label (ex: Compte perso, Compte pro…)" 
+                  placeholder="Label (ex: Compte perso, Compte pro…)"
                   className="rounded-lg px-2.5 py-1.5 text-sm outline-none"
                   style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-base)', color: 'var(--text-primary)' }} />
-                <input type="password" value={newKeyValue} onChange={e => setNewKeyValue(e.target.value)}
-                  placeholder="Clé API Gemini (AIza…)" autoFocus
-                  className="rounded-lg px-2.5 py-1.5 text-sm font-mono outline-none"
-                  style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-base)', color: 'var(--text-primary)' }} />
+                <SecretInput
+                  value={newKeyValue}
+                  onChange={setNewKeyValue}
+                  placeholder="Clé API Gemini (AIza…)"
+                  onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter' && newKeyValue.trim()) handleAddGeminiKey(); }}
+                />
                 <div className="flex gap-2">
                   <motion.button type="button" onClick={handleAddGeminiKey} disabled={addingKey || !newKeyValue.trim()}
                     whileTap={{ scale: 0.95 }}
@@ -210,7 +241,7 @@ export function TokensSection() {
       </div>
 
       {/* ─── Other Tokens ─── */}
-      <div className="grid grid-cols-2 gap-3 pr-1">
+      <div className="grid grid-cols-1 gap-3 pr-1 sm:grid-cols-2">
         {tokens.map(token => (
           <div key={token.key} className="rounded-xl p-3"
             style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-base)' }}>
@@ -234,10 +265,14 @@ export function TokensSection() {
             )}
             {editingKey === token.key ? (
               <div className="flex gap-2 mt-2">
-                <input type="password" value={editValue} onChange={e => setEditValue(e.target.value)}
-                  placeholder="Nouvelle valeur…" autoFocus
-                  className="flex-1 rounded-lg px-2.5 py-1.5 text-sm outline-none"
-                  style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-base)', color: 'var(--text-primary)' }} />
+                <div className="flex-1">
+                  <SecretInput
+                    value={editValue}
+                    onChange={setEditValue}
+                    placeholder="Nouvelle valeur…"
+                    onKeyDown={(e: React.KeyboardEvent) => { if (e.key === 'Enter' && editValue.trim()) handleSave(token.key); }}
+                  />
+                </div>
                 <motion.button type="button" onClick={() => handleSave(token.key)} disabled={saving || !editValue.trim()}
                   whileTap={{ scale: 0.95 }}
                   className="rounded-lg px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
@@ -262,13 +297,19 @@ export function TokensSection() {
         <AnimatePresence>
           {feedback && (
             <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-              className="col-span-2 rounded-lg px-3 py-2 text-xs font-medium"
+              className="col-span-1 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium sm:col-span-2"
               style={{
                 backgroundColor: feedback.type === 'success' ? 'color-mix(in srgb, var(--color-success) 10%, transparent)' : 'color-mix(in srgb, var(--color-error) 10%, transparent)',
                 color: feedback.type === 'success' ? 'var(--color-success)' : 'var(--color-error)',
                 border: `1px solid ${feedback.type === 'success' ? 'color-mix(in srgb, var(--color-success) 25%, transparent)' : 'color-mix(in srgb, var(--color-error) 25%, transparent)'}`,
               }}>
-              {feedback.type === 'success' ? '✓' : '✗'} {feedback.message}
+              {feedback.type === 'success'
+                ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                : <AlertCircle className="h-3.5 w-3.5 shrink-0" />}
+              <span className="flex-1">{feedback.message}</span>
+              <button type="button" onClick={() => setFeedback(null)} className="opacity-60 hover:opacity-100" aria-label="Fermer">
+                <X className="h-3.5 w-3.5" />
+              </button>
             </motion.div>
           )}
         </AnimatePresence>

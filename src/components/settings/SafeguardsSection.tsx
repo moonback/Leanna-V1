@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion } from 'motion/react';
-import { ShieldCheck, History, FileWarning, RotateCcw, Play, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  ShieldCheck, History, FileWarning, RotateCcw, Play, CheckCircle2, XCircle, Clock,
+  RefreshCw, Loader2, AlertCircle, X,
+} from 'lucide-react';
 import { Section, Field, ToggleSwitch } from './SettingsPrimitives.js';
 import { AutonomyLevelSelector } from '../autonomy/AutonomyLevelSelector.js';
 import { useSafeguardsConfig, type SafeguardsConfig } from '../../hooks/useSafeguardsConfig.js';
@@ -17,6 +20,8 @@ export function SafeguardsSection() {
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [loadingCheckpoints, setLoadingCheckpoints] = useState(false);
   const [validationStatus, setValidationStatus] = useState<'idle' | 'running' | 'pass' | 'fail'>('idle');
+  const [rollbackHash, setRollbackHash] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const hasFetched = useRef(false);
 
   useEffect(() => {
@@ -51,14 +56,27 @@ export function SafeguardsSection() {
 
   const rollbackTo = async (hash: string) => {
     if (!confirm(`Revenir au checkpoint ${hash.slice(0, 7)} ? Cette action est irréversible.`)) return;
+    setRollbackHash(hash);
+    setFeedback(null);
     try {
-      await fetch('/api/safeguards/rollback', {
+      const res = await fetch('/api/safeguards/rollback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hash }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.status !== 'error') {
+        setFeedback({ type: 'success', message: `Retour au checkpoint ${hash.slice(0, 7)} effectué.` });
+      } else {
+        setFeedback({ type: 'error', message: data.error || 'Échec du retour arrière.' });
+      }
       fetchCheckpoints();
-    } catch { /* handled by UI */ }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Erreur réseau lors du retour arrière.';
+      setFeedback({ type: 'error', message });
+    } finally {
+      setRollbackHash(null);
+    }
   };
 
   return (
@@ -170,18 +188,50 @@ export function SafeguardsSection() {
         </motion.button>
       </Field>
 
+      {/* ─── Feedback rollback ─── */}
+      <AnimatePresence>
+        {feedback && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium"
+            style={{
+              backgroundColor: feedback.type === 'success'
+                ? 'color-mix(in srgb, var(--color-success) 10%, transparent)'
+                : 'color-mix(in srgb, var(--color-error) 10%, transparent)',
+              color: feedback.type === 'success' ? 'var(--color-success)' : 'var(--color-error)',
+              border: `1px solid color-mix(in srgb, ${feedback.type === 'success' ? 'var(--color-success)' : 'var(--color-error)'} 25%, transparent)`,
+            }}
+          >
+            {feedback.type === 'success' ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : <AlertCircle className="h-3.5 w-3.5 shrink-0" />}
+            <span className="flex-1">{feedback.message}</span>
+            <button onClick={() => setFeedback(null)} className="opacity-60 hover:opacity-100" aria-label="Fermer">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ─── Recent Checkpoints ─── */}
       <Field label="Checkpoints récents" hint="Derniers snapshots créés par l'IA avant modification">
+        <div className="mb-1.5 flex justify-end">
+          <button
+            type="button"
+            onClick={fetchCheckpoints}
+            disabled={loadingCheckpoints}
+            className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition hover:opacity-80 disabled:opacity-50"
+            style={{ borderColor: 'var(--border-base)', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-secondary)' }}
+          >
+            <RefreshCw className={`h-3 w-3 ${loadingCheckpoints ? 'animate-spin' : ''}`} />
+            Rafraîchir
+          </button>
+        </div>
         <div className="rounded-xl p-3 max-h-52 overflow-y-auto custom-scrollbar"
           style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-base)' }}>
           {loadingCheckpoints && (
             <div className="flex items-center gap-2 py-3 justify-center">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-                className="w-3.5 h-3.5 border-2 rounded-full"
-                style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }}
-              />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: 'var(--accent-primary)' }} />
               <span className="text-sm" style={{ color: 'var(--text-dimmed)' }}>Chargement…</span>
             </div>
           )}
@@ -220,10 +270,13 @@ export function SafeguardsSection() {
                     <button
                       type="button"
                       onClick={() => rollbackTo(cp.hash)}
-                      className="p-1 rounded-md transition-colors hover:bg-[color-mix(in_srgb,var(--color-warning)_12%,transparent)]"
+                      disabled={rollbackHash !== null}
+                      className="p-1 rounded-md transition-colors hover:bg-[color-mix(in_srgb,var(--color-warning)_12%,transparent)] disabled:opacity-40"
                       title="Revenir à ce checkpoint"
                     >
-                      <RotateCcw className="w-3 h-3" style={{ color: 'var(--color-warning)' }} />
+                      {rollbackHash === cp.hash
+                        ? <Loader2 className="w-3 h-3 animate-spin" style={{ color: 'var(--color-warning)' }} />
+                        : <RotateCcw className="w-3 h-3" style={{ color: 'var(--color-warning)' }} />}
                     </button>
                   </div>
                 </motion.li>

@@ -222,6 +222,44 @@ export function ToggleSwitch({ value, onChange, label, hint }: {
   );
 }
 
+// ─── RangeSlider ──────────────────────────────────────────────────────────────
+
+export function RangeSlider({ value, onChange, min, max, step = 1, unit, format }: {
+  value: number; onChange: (v: number) => void;
+  min: number; max: number; step?: number;
+  unit?: string; format?: (v: number) => string;
+}) {
+  const clamped = Math.min(max, Math.max(min, value));
+  const pct = max > min ? ((clamped - min) / (max - min)) * 100 : 0;
+  const display = format ? format(clamped) : `${clamped}${unit ? ` ${unit}` : ''}`;
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="relative flex-1">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={clamped}
+          onChange={e => onChange(Number(e.target.value))}
+          className="h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-[var(--accent-primary)] [&::-webkit-slider-thumb]:shadow [&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:hover:scale-110 [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:w-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-[var(--accent-primary)]"
+          style={{
+            background: `linear-gradient(to right, var(--accent-primary) 0%, var(--accent-primary) ${pct}%, var(--bg-secondary) ${pct}%, var(--bg-secondary) 100%)`,
+          }}
+          aria-valuetext={display}
+        />
+      </div>
+      <span
+        className="min-w-[64px] shrink-0 rounded-lg px-2 py-1 text-center text-xs font-mono font-semibold"
+        style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border-base)' }}
+      >
+        {display}
+      </span>
+    </div>
+  );
+}
+
 // ─── ChipGroup ────────────────────────────────────────────────────────────────
 
 export function ChipGroup<T extends string>({ options, value, onChange, ...props }: {

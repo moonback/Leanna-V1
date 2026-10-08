@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Globe, Zap, Check, AlertCircle, Search } from 'lucide-react';
+import { Globe, Zap, Check, AlertCircle, Search, Filter, X } from 'lucide-react';
 import { useProfile } from '../../context/UserProfileContext.js';
 import { Section, Field, SecretInput } from './SettingsPrimitives.js';
 import type { AIProvider } from '../../context/UserProfileContext.js';
@@ -45,12 +45,30 @@ export function OpenRouterSection() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [freeOnly, setFreeOnly] = useState(false);
 
-  const filteredModels = OPENROUTER_MODELS.filter(m =>
-    m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    m.provider.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    m.id.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredModels = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return OPENROUTER_MODELS.filter(m => {
+      if (freeOnly && !m.free) return false;
+      return (
+        m.name.toLowerCase().includes(q) ||
+        m.provider.toLowerCase().includes(q) ||
+        m.id.toLowerCase().includes(q)
+      );
+    });
+  }, [searchQuery, freeOnly]);
+
+  // Le modèle sélectionné ne figure pas dans la liste prédéfinie → modèle « custom ».
+  const isCustomModel = useMemo(
+    () => !OPENROUTER_MODELS.some(m => m.id === profile.openrouterModel),
+    [profile.openrouterModel],
   );
+
+  const freeCount = useMemo(() => OPENROUTER_MODELS.filter(m => m.free).length, []);
+
+  // Réinitialise le résultat du test quand la clé ou le modèle change.
+  useEffect(() => { setTestResult(null); }, [profile.openrouterApiKey, profile.openrouterModel]);
 
   const testConnection = async () => {
     setTesting(true);
@@ -148,21 +166,57 @@ export function OpenRouterSection() {
 
             {/* Model Selector */}
             <Field label="Modèle" hint="Les modèles gratuits sont marqués ⚡. Les modèles payants nécessitent des crédits OpenRouter.">
-              {/* Search */}
-              <div className="relative mb-2">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: 'var(--text-dimmed)' }} />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Rechercher un modèle..."
-                  className="w-full rounded-lg pl-8 pr-3 py-2 text-xs outline-none transition-all duration-200"
-                  style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-base)', color: 'var(--text-primary)' }}
-                />
+              {/* Search + filtre gratuit */}
+              <div className="mb-2 flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: 'var(--text-dimmed)' }} />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    placeholder="Rechercher un modèle..."
+                    className="w-full rounded-lg pl-8 pr-7 py-2 text-xs outline-none transition-all duration-200"
+                    style={{ backgroundColor: 'var(--bg-input)', border: '1px solid var(--border-base)', color: 'var(--text-primary)' }}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 opacity-50 hover:opacity-100"
+                      style={{ color: 'var(--text-muted)' }}
+                      aria-label="Effacer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFreeOnly(f => !f)}
+                  title={`Afficher uniquement les modèles gratuits (${freeCount})`}
+                  className="flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition hover:opacity-80"
+                  style={{
+                    borderColor: freeOnly ? 'var(--color-success)' : 'var(--border-base)',
+                    backgroundColor: freeOnly ? 'color-mix(in srgb, var(--color-success) 12%, transparent)' : 'var(--bg-secondary)',
+                    color: freeOnly ? 'var(--color-success)' : 'var(--text-secondary)',
+                  }}
+                >
+                  {freeOnly ? <Zap className="h-3.5 w-3.5" /> : <Filter className="h-3.5 w-3.5" />}
+                  Gratuits
+                </button>
               </div>
+
+              <p className="mb-1.5 text-xs" style={{ color: 'var(--text-dimmed)' }}>
+                {filteredModels.length} modèle{filteredModels.length > 1 ? 's' : ''} · {freeCount} gratuit{freeCount > 1 ? 's' : ''}
+              </p>
 
               {/* Model Grid */}
               <div className="grid grid-cols-1 gap-1.5 max-h-[280px] overflow-y-auto custom-scrollbar pr-1">
+                {filteredModels.length === 0 && (
+                  <p className="py-4 text-center text-xs" style={{ color: 'var(--text-dimmed)' }}>
+                    Aucun modèle ne correspond. Essayez un ID personnalisé ci-dessous.
+                  </p>
+                )}
                 {filteredModels.map(model => {
                   const active = profile.openrouterModel === model.id;
                   return (
@@ -218,6 +272,12 @@ export function OpenRouterSection() {
                 onFocus={e => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; }}
                 onBlur={e => { e.currentTarget.style.borderColor = 'var(--border-base)'; }}
               />
+              {isCustomModel && profile.openrouterModel.trim() && (
+                <span className="mt-1 flex items-center gap-1 text-xs" style={{ color: 'var(--accent-primary)' }}>
+                  <Check className="h-3 w-3" />
+                  Modèle personnalisé actif (hors liste)
+                </span>
+              )}
             </Field>
           </motion.div>
         )}
