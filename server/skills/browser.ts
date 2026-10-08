@@ -349,6 +349,47 @@ export function isSponsoredLink(text: string, href: string): boolean {
   return false;
 }
 
+/** Mots vides FR + EN retirés lors de la condensation d'une requête web. */
+const SEARCH_STOPWORDS = new Set<string>([
+  "le", "la", "les", "un", "une", "des", "du", "de", "d", "et", "ou", "à", "au",
+  "aux", "en", "dans", "sur", "pour", "par", "avec", "sans", "ses", "son", "sa",
+  "ce", "cette", "ces", "qui", "que", "quoi", "dont", "est", "sont", "actuelle",
+  "actuel", "officielle", "officiel", "ainsi", "notamment", "concernant",
+  "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "about",
+  "current", "official", "latest", "please", "find", "search", "regarding",
+]);
+
+/**
+ * Condense une requête LLM (souvent une phrase/paragraphe) en une courte liste
+ * de mots-clés exploitables par un moteur de recherche. Conserve l'ordre, retire
+ * la ponctuation et les mots vides, borne le nombre de termes et la longueur.
+ */
+export function condenseSearchQuery(raw: string, maxTerms = 12): string {
+  if (!raw) return "";
+  // Première phrase seulement : coupe au premier ":" ou "." qui termine une idée.
+  const firstChunk = raw.split(/[:\n]/)[0] ?? raw;
+  const tokens = firstChunk
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s.#+-]/gu, " ") // garde lettres/chiffres et . # + - (ex: gemini-3.1)
+    .split(/\s+/)
+    .filter(Boolean);
+
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  for (const tok of tokens) {
+    const t = tok.replace(/^[.+-]+|[.+-]+$/g, "");
+    if (t.length < 2) continue;
+    if (SEARCH_STOPWORDS.has(t)) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+    kept.push(tok);
+    if (kept.length >= maxTerms) break;
+  }
+  const condensed = kept.join(" ").trim();
+  // Repli : si la condensation vide tout, garder un préfixe raisonnable.
+  return condensed.length > 0 ? condensed.slice(0, 200) : raw.trim().slice(0, 120);
+}
+
 export function rankLinkCandidates(
   links: Array<{ text?: string; href?: string }>,
   currentUrl?: string
@@ -1579,14 +1620,32 @@ export const browserSkill: Skill = {
       const { query, maxSources, read } = validateArgs(browserSkill.inputSchemas!["browser_web_search"], args);
       const provider = createWebSearchProvider();
 
-      let hits;
-      try {
-        hits = await provider.search(query, Math.max(maxSources * 2, 8));
-      } catch (err: any) {
+      // Les requêtes générées par un LLM sont souvent des phrases/paragraphes
+      // entiers : les moteurs (DuckDuckGo HTML) renvoient alors peu ou pas de
+      // résultats. On interroge d'abord avec la requête condensée (mots-clés),
+      // puis on retente avec une version encore plus courte avant d'abandonner.
+      const condensed = condenseSearchQuery(query);
+      const attempts = Array.from(new Set([
+        condensed,
+        condenseSearchQuery(query, 6),
+      ].filter((q) => q.length > 0)));
+      if (attempts.length === 0) attempts.push(query.slice(0, 120));
+
+      let hits: Awaited<ReturnType<typeof provider.search>> = [];
+      let lastErr: unknown = null;
+      for (const attempt of attempts) {
+        try {
+          hits = await provider.search(attempt, Math.max(maxSources * 2, 8));
+          if (hits.length > 0) break;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      if (hits.length === 0 && lastErr) {
         return {
           status: "error",
           query,
-          message: `Recherche web impossible : ${err?.message ?? "erreur inconnue"}. Essaie browser_research (via la webview) en repli.`,
+          message: `Recherche web impossible : ${(lastErr as Error)?.message ?? "erreur inconnue"}.`,
         };
       }
 

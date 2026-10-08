@@ -3,6 +3,7 @@ import assert from "node:assert";
 import {
   WebSearchProvider,
   parseDuckDuckGoHtml,
+  parseBraveResults,
   decodeDdgHref,
   extractReadableText,
 } from "./webSearchProvider.js";
@@ -112,6 +113,104 @@ describe("webSearchProvider", () => {
         fetchImpl: makeFakeFetch({ "https://html.duckduckgo.com/html/": { body: "<html>unusual traffic detected, please solve the captcha</html>" } }),
       });
       await assert.rejects(() => provider.search("test"), /anti-bot|CAPTCHA|anomaly/i);
+    });
+  });
+
+  describe("parseBraveResults", () => {
+    const BRAVE_JSON = JSON.stringify({
+      web: {
+        results: [
+          { title: "Gemini Live <b>API</b>", url: "https://ai.google.dev/live", description: "Doc officielle&nbsp;live." },
+          { title: "Guide", url: "https://example.org/guide", description: "Un guide." },
+          { title: "Mauvais", url: "ftp://nope", description: "ignoré (schéma)" },
+          { title: "", url: "https://example.net/vide", description: "sans titre -> ignoré" },
+        ],
+      },
+    });
+
+    it("extracts title/url/snippet and strips tags/entities", () => {
+      const hits = parseBraveResults(BRAVE_JSON);
+      assert.equal(hits.length, 2);
+      assert.equal(hits[0].url, "https://ai.google.dev/live");
+      assert.equal(hits[0].title, "Gemini Live API");
+      assert.match(hits[0].snippet, /Doc officielle live\./);
+      assert.equal(hits[1].url, "https://example.org/guide");
+    });
+
+    it("respects the limit", () => {
+      assert.equal(parseBraveResults(BRAVE_JSON, 1).length, 1);
+    });
+
+    it("returns [] on malformed JSON or unexpected shape", () => {
+      assert.deepEqual(parseBraveResults("{not json"), []);
+      assert.deepEqual(parseBraveResults(JSON.stringify({ nope: true })), []);
+    });
+  });
+
+  describe("WebSearchProvider.search — Brave backend", () => {
+    const BRAVE_URL = "https://api.search.brave.com/res/v1/web/search";
+    const braveBody = JSON.stringify({
+      web: { results: [{ title: "Brave hit", url: "https://brave.example/x", description: "ok" }] },
+    });
+
+    it("uses Brave when an API key is provided", async () => {
+      let braveCalled = false;
+      const provider = new WebSearchProvider({
+        braveApiKey: "test-key",
+        fetchImpl: async (u: string) => {
+          if (u.startsWith(BRAVE_URL)) braveCalled = true;
+          return {
+            ok: true, status: 200, url: u,
+            headers: { get: () => "application/json" },
+            text: async () => braveBody,
+          };
+        },
+      });
+      const hits = await provider.search("gemini live", 5);
+      assert.equal(braveCalled, true, "Brave doit être interrogé en priorité");
+      assert.equal(hits[0].url, "https://brave.example/x");
+    });
+
+    it("falls back to DuckDuckGo when Brave fails in auto mode", async () => {
+      let ddgCalled = false;
+      const provider = new WebSearchProvider({
+        braveApiKey: "test-key",
+        searchBackend: "auto",
+        fetchImpl: async (u: string) => {
+          if (u.startsWith(BRAVE_URL)) {
+            return { ok: false, status: 429, url: u, headers: { get: () => "application/json" }, text: async () => "" };
+          }
+          ddgCalled = true;
+          return { ok: true, status: 200, url: u, headers: { get: () => "text/html" }, text: async () => DDG_SAMPLE };
+        },
+      });
+      const hits = await provider.search("test", 5);
+      assert.equal(ddgCalled, true, "DDG doit prendre le relais");
+      assert.equal(hits[0].url, "https://example.com/article");
+    });
+
+    it("propagates the error in explicit brave mode (no fallback)", async () => {
+      const provider = new WebSearchProvider({
+        braveApiKey: "test-key",
+        searchBackend: "brave",
+        fetchImpl: async (u: string) => ({
+          ok: false, status: 401, url: u, headers: { get: () => "application/json" }, text: async () => "",
+        }),
+      });
+      await assert.rejects(() => provider.search("test"), /Brave.*(refusée|401)/i);
+    });
+
+    it("skips Brave and uses DDG when no key is configured", async () => {
+      let braveCalled = false;
+      const provider = new WebSearchProvider({
+        fetchImpl: async (u: string) => {
+          if (u.startsWith(BRAVE_URL)) braveCalled = true;
+          return { ok: true, status: 200, url: u, headers: { get: () => "text/html" }, text: async () => DDG_SAMPLE };
+        },
+      });
+      const hits = await provider.search("test", 5);
+      assert.equal(braveCalled, false, "sans clé, Brave n'est pas interrogé");
+      assert.equal(hits.length, 2);
     });
   });
 

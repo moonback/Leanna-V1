@@ -58,6 +58,25 @@ export interface WebSearchProviderOptions {
   maxBytes?: number;
   /** User-Agent annoncé. */
   userAgent?: string;
+  /**
+   * Clé API Brave Search (header `X-Subscription-Token`). Si fournie, la
+   * recherche interroge l'API Brave en PRIORITÉ (résultats structurés fiables),
+   * avec repli automatique sur DuckDuckGo HTML en cas d'échec. Défaut : lue
+   * depuis `BRAVE_SEARCH_API_KEY` par la fabrique `createWebSearchProvider`.
+   */
+  braveApiKey?: string;
+  /**
+   * Force le backend de recherche. "auto" (défaut) = Brave si clé présente,
+   * sinon DuckDuckGo. "brave" = Brave uniquement. "duckduckgo" = DDG uniquement.
+   */
+  searchBackend?: "auto" | "brave" | "duckduckgo";
+}
+
+/** Un résultat brut de l'API Brave Web Search (champs utilisés). */
+interface BraveWebResult {
+  title?: string;
+  url?: string;
+  description?: string;
 }
 
 const DEFAULT_UA =
@@ -144,6 +163,42 @@ export function parseDuckDuckGoHtml(html: string, limit = 10): SearchHit[] {
   return hits;
 }
 
+// ─── Résultats Brave Search (JSON) ────────────────────────────────────────────
+
+/**
+ * Parse la réponse JSON de l'API Brave Web Search (`res/v1/web/search`).
+ * Les résultats web sont sous `web.results[]` avec `title`, `url`,
+ * `description` (extrait). Robuste à un JSON malformé ou à une forme inattendue.
+ */
+export function parseBraveResults(json: string, limit = 10): SearchHit[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  const results = (data as { web?: { results?: BraveWebResult[] } })?.web?.results;
+  if (!Array.isArray(results)) return [];
+
+  const hits: SearchHit[] = [];
+  const seen = new Set<string>();
+  for (const r of results) {
+    const url = typeof r?.url === "string" ? r.url : "";
+    if (!/^https?:\/\//i.test(url)) continue;
+    if (seen.has(url)) continue;
+    const title = stripTags(String(r?.title ?? ""));
+    if (!title) continue;
+    seen.add(url);
+    hits.push({
+      title,
+      url,
+      snippet: stripTags(String(r?.description ?? "")),
+    });
+    if (hits.length >= limit) break;
+  }
+  return hits;
+}
+
 // ─── Extraction d'article (HTML → texte lisible) ──────────────────────────────
 
 /**
@@ -196,6 +251,8 @@ export class WebSearchProvider {
   private readonly timeoutMs: number;
   private readonly maxBytes: number;
   private readonly userAgent: string;
+  private readonly braveApiKey: string;
+  private readonly searchBackend: "auto" | "brave" | "duckduckgo";
 
   constructor(opts: WebSearchProviderOptions = {}) {
     const globalFetch = (globalThis as { fetch?: FetchLike }).fetch;
@@ -205,20 +262,29 @@ export class WebSearchProvider {
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT;
     this.maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
     this.userAgent = opts.userAgent ?? DEFAULT_UA;
+    this.braveApiKey = (opts.braveApiKey ?? "").trim();
+    this.searchBackend = opts.searchBackend ?? "auto";
   }
 
-  /** Lance une requête avec timeout et nettoyage du timer. */
-  private async timedFetch(url: string): Promise<{ status: number; finalUrl: string; body: string; contentType: string }> {
+  /**
+   * Lance une requête avec timeout et nettoyage du timer. Les en-têtes par
+   * défaut ciblent le HTML ; `headers` permet de les surcharger (ex. JSON +
+   * token pour l'API Brave).
+   */
+  private async timedFetch(
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<{ status: number; finalUrl: string; body: string; contentType: string }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const res = await this.fetchImpl(url, {
         redirect: "follow",
-        headers: { "User-Agent": this.userAgent, Accept: "text/html,application/xhtml+xml" },
+        headers: headers ?? { "User-Agent": this.userAgent, Accept: "text/html,application/xhtml+xml" },
         signal: controller.signal,
       });
       const contentType = res.headers.get("content-type") ?? "";
-      // Lecture bornée : on tronque le HTML pour éviter d'avaler une page énorme.
+      // Lecture bornée : on tronque le corps pour éviter d'avaler une page énorme.
       const raw = await res.text();
       const body = raw.length > this.maxBytes ? raw.slice(0, this.maxBytes) : raw;
       return { status: res.status, finalUrl: res.url || url, body, contentType };
@@ -227,11 +293,63 @@ export class WebSearchProvider {
     }
   }
 
+  /** Indique le backend effectivement sélectionné compte tenu de la config. */
+  private resolveBackend(): "brave" | "duckduckgo" {
+    if (this.searchBackend === "brave") return "brave";
+    if (this.searchBackend === "duckduckgo") return "duckduckgo";
+    return this.braveApiKey ? "brave" : "duckduckgo";
+  }
+
   /**
-   * Recherche web → résultats structurés. DuckDuckGo HTML par défaut.
-   * Détecte une page anti-bot (CAPTCHA / anomaly) et renvoie une erreur claire.
+   * Recherche web → résultats structurés.
+   *   - Backend "auto" (défaut) : Brave API si une clé est configurée, sinon
+   *     DuckDuckGo HTML. En cas d'échec de Brave, repli automatique sur DDG.
+   *   - Détecte une page anti-bot DuckDuckGo (CAPTCHA / anomaly).
    */
   async search(query: string, limit = 8): Promise<SearchHit[]> {
+    const backend = this.resolveBackend();
+
+    if (backend === "brave") {
+      try {
+        return await this.searchBrave(query, limit);
+      } catch (err) {
+        // Repli DDG uniquement en mode "auto" (clé présente mais Brave KO).
+        // En mode "brave" explicite, on propage l'erreur.
+        if (this.searchBackend === "brave") throw err;
+        return this.searchDuckDuckGo(query, limit);
+      }
+    }
+    return this.searchDuckDuckGo(query, limit);
+  }
+
+  /** Recherche via l'API Brave (`res/v1/web/search`). Clé en header. */
+  private async searchBrave(query: string, limit: number): Promise<SearchHit[]> {
+    if (!this.braveApiKey) throw new Error("Clé API Brave absente.");
+    const count = Math.min(Math.max(limit, 1), 20);
+    const q = encodeURIComponent(query.trim());
+    const url = `https://api.search.brave.com/res/v1/web/search?q=${q}&count=${count}`;
+    assertPublicHttpUrl(url);
+    const { body, status } = await this.timedFetch(url, {
+      Accept: "application/json",
+      "Accept-Encoding": "gzip",
+      "X-Subscription-Token": this.braveApiKey,
+    });
+    if (status === 401 || status === 403) {
+      throw new Error(`Brave Search : clé API refusée (HTTP ${status}).`);
+    }
+    if (status === 429) {
+      throw new Error("Brave Search : quota/limite de débit atteint (HTTP 429).");
+    }
+    if (status >= 400) {
+      throw new Error(`Brave Search a échoué (HTTP ${status}).`);
+    }
+    const hits = parseBraveResults(body, limit);
+    if (hits.length === 0) throw new Error("Brave Search : aucun résultat.");
+    return hits;
+  }
+
+  /** Recherche via DuckDuckGo HTML (sans clé). Détecte les pages anti-bot. */
+  private async searchDuckDuckGo(query: string, limit: number): Promise<SearchHit[]> {
     const q = encodeURIComponent(query.trim());
     const url = `https://html.duckduckgo.com/html/?q=${q}`;
     assertPublicHttpUrl(url);
@@ -284,7 +402,13 @@ export class WebSearchProvider {
   }
 }
 
-/** Fabrique le provider par défaut (DuckDuckGo HTML via fetch global). */
+/**
+ * Fabrique le provider par défaut. Si `BRAVE_SEARCH_API_KEY` est défini dans
+ * l'environnement, la recherche passe par l'API Brave (avec repli DuckDuckGo) ;
+ * sinon elle utilise DuckDuckGo HTML. Les options explicites priment sur l'env.
+ */
 export function createWebSearchProvider(opts: WebSearchProviderOptions = {}): WebSearchProvider {
-  return new WebSearchProvider(opts);
+  const envKey = (process.env.BRAVE_SEARCH_API_KEY ?? "").trim();
+  const braveApiKey = opts.braveApiKey ?? (envKey.length > 0 ? envKey : undefined);
+  return new WebSearchProvider({ ...opts, braveApiKey });
 }
