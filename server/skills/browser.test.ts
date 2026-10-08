@@ -225,13 +225,13 @@ describe("browser", () => {
         assert.ok(!invalidResult.success);
       });
 
-      it("should default to google engine", () => {
+      it("should default to bing engine (Google n'est pas chargeable en webview)", () => {
         const schema = browserSkill.inputSchemas!["browser_search"];
 
         const result = schema.parse({
           query: "test",
         });
-        assert.strictEqual(result.engine, "google");
+        assert.strictEqual(result.engine, "bing");
       });
     });
 
@@ -411,13 +411,13 @@ describe("browser", () => {
         assert.ok(validResult.success);
       });
 
-      it("should default engine to google and maxSources to 3", () => {
+      it("should default engine to bing and maxSources to 3", () => {
         const schema = browserSkill.inputSchemas!["browser_research"];
 
         const result = schema.parse({
           query: "test",
         });
-        assert.strictEqual(result.engine, "google");
+        assert.strictEqual(result.engine, "bing");
         assert.strictEqual(result.maxSources, 3);
       });
 

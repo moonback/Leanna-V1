@@ -279,21 +279,32 @@ export function normalizeUrl(raw: string): string {
     return normalized;
   }
 
-  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
+  // Un terme libre devient une recherche AFFICHÉE dans la webview. On n'utilise
+  // PAS Google ici : Google refuse de se charger dans une <webview> Electron
+  // (en-têtes anti-framing → ERR_ABORTED -3). Bing, lui, s'affiche normalement.
+  return buildSearchUrl("google", trimmed);
 }
 
+/**
+ * Construit l'URL de recherche pour le navigateur INTÉGRÉ (webview).
+ *
+ * Contrainte clé : Google bloque son chargement dans une <webview>/iframe
+ * (ERR_ABORTED -3 côté Electron). On route donc toute demande "google" (et le
+ * défaut) vers Bing, qui tolère le framing et rend une page de résultats
+ * exploitable par browser_get_links/browser_read_content. Pour une recherche
+ * SANS webview (fetch serveur), utiliser browser_web_search à la place.
+ */
 function buildSearchUrl(engine: string, query: string): string {
   const q = encodeURIComponent(query);
   switch (engine) {
-    case "bing":
-      return `https://www.bing.com/search?q=${q}`;
     case "duckduckgo":
       return `https://duckduckgo.com/html/?q=${q}`;
     case "wikipedia":
       return `https://fr.wikipedia.org/w/index.php?search=${q}`;
-    case "google":
+    case "bing":
+    case "google": // Google ne se charge pas en webview → repli Bing.
     default:
-      return `https://www.google.com/search?q=${q}`;
+      return `https://www.bing.com/search?q=${q}`;
   }
 }
 
@@ -456,7 +467,7 @@ const searchEngineEnum = z.enum(["google", "bing", "duckduckgo", "wikipedia"]);
 
 const searchSchema = z.object({
   query: z.string().min(1, "Requête de recherche requise"),
-  engine: searchEngineEnum.optional().default("google"),
+  engine: searchEngineEnum.optional().default("bing"),
 });
 
 const scrollSchema = z.object({
@@ -505,7 +516,7 @@ const openLinkSchema = z
 
 const researchSchema = z.object({
   query: z.string().min(1, "Requête de recherche requise"),
-  engine: searchEngineEnum.optional().default("google"),
+  engine: searchEngineEnum.optional().default("bing"),
   maxSources: z.number().int().positive().max(5).default(3),
 });
 
@@ -595,7 +606,7 @@ export const browserSkill: Skill = {
         properties: {
           url: {
             type: "STRING",
-            description: "L'URL à visiter (ex: https://example.com). Peut être une URL complète, un domaine, ou un terme de recherche (sera automatiquement converti en recherche Google).",
+            description: "L'URL à visiter (ex: https://example.com). Peut être une URL complète, un domaine, ou un terme de recherche (converti en recherche web affichée dans le navigateur ; Google n'étant pas chargeable en webview, un autre moteur est utilisé). Pour une recherche rapide côté serveur sans navigateur, préfère browser_web_search.",
           },
         },
         required: ["url"],
@@ -623,7 +634,7 @@ export const browserSkill: Skill = {
           },
           engine: {
             type: "STRING",
-            description: "Moteur de recherche : 'google' (défaut), 'bing', 'duckduckgo', ou 'wikipedia'.",
+            description: "Moteur de recherche : 'bing' (défaut), 'duckduckgo', ou 'wikipedia'. Note : 'google' est accepté mais rendu via Bing car Google ne se charge pas dans le navigateur intégré.",
           },
         },
         required: ["query"],
@@ -812,7 +823,7 @@ export const browserSkill: Skill = {
           },
           engine: {
             type: "STRING",
-            description: "Moteur : 'google' (défaut), 'bing', 'duckduckgo', 'wikipedia'.",
+            description: "Moteur : 'bing' (défaut), 'duckduckgo', 'wikipedia'. ('google' est accepté mais rendu via Bing — non chargeable en webview.)",
           },
           maxSources: {
             type: "NUMBER",
