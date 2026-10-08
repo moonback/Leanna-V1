@@ -89,15 +89,28 @@ export function EnvSetupModal() {
     setValues(prev => ({ ...prev, [key]: value }));
   }, []);
 
-  const requiredSatisfied = useMemo(
-    () => REQUIRED_KEYS.every(k => configured[k] || (values[k]?.trim().length ?? 0) > 0),
+  // Progression des clés requises (déjà configurées OU saisies dans ce modal).
+  const requiredDone = useMemo(
+    () => REQUIRED_KEYS.filter(k => configured[k] || (values[k]?.trim().length ?? 0) > 0).length,
     [configured, values],
   );
+  const requiredTotal = REQUIRED_KEYS.length;
+  const requiredSatisfied = requiredDone === requiredTotal;
 
   const dismiss = useCallback(() => {
     localStorage.setItem(SETUP_DONE_KEY, '1');
     setIsOpen(false);
   }, []);
+
+  // Fermeture au clavier (Échap) — comportement standard d'un modal.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving) dismiss();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, saving, dismiss]);
 
   const handleSave = useCallback(async () => {
     const updates: Record<string, string> = {};
@@ -186,14 +199,35 @@ export function EnvSetupModal() {
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: 'var(--accent-subtle)' }}>
               <KeyRound className="h-5 w-5" style={{ color: 'var(--accent-primary)' }} />
             </div>
-            <div className="min-w-0">
-              <h1 id="env-setup-title" className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-                Configuration des clés principales
-              </h1>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <h1 id="env-setup-title" className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Configuration des clés principales
+                </h1>
+                <span
+                  className="flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-mono font-semibold"
+                  style={{
+                    backgroundColor: requiredSatisfied ? 'color-mix(in srgb, var(--color-success) 15%, transparent)' : 'var(--accent-subtle)',
+                    color: requiredSatisfied ? 'var(--color-success)' : 'var(--accent-primary)',
+                  }}
+                >
+                  {requiredDone}/{requiredTotal} requises
+                </span>
+              </div>
               <p className="mt-0.5 text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                 Renseignez vos clés essentielles pour activer Leanna. Vous pourrez les modifier
                 plus tard dans Paramètres → Variables .env.
               </p>
+              {/* Barre de progression */}
+              <div className="mt-2 h-1 w-full overflow-hidden rounded-full" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ backgroundColor: requiredSatisfied ? 'var(--color-success)' : 'var(--accent-primary)' }}
+                  initial={false}
+                  animate={{ width: `${requiredTotal ? (requiredDone / requiredTotal) * 100 : 0}%` }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                />
+              </div>
             </div>
           </div>
 

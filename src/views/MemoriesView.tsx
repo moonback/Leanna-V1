@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { BrainCircuit, Search, Trash2, RefreshCw } from 'lucide-react';
+import { BrainCircuit, Search, Trash2, RefreshCw, Loader2, X, Check } from 'lucide-react';
 import { useToast } from '../components/ui/Toast.js';
 import { ViewHeader } from '../components/ui/ViewHeader.js';
 
@@ -23,6 +23,7 @@ export default function MemoriesView() {
   const [loading, setLoading]   = useState(true);
   const [query, setQuery]       = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -41,6 +42,7 @@ export default function MemoriesView() {
 
   const handleDelete = useCallback(async (id: string) => {
     setDeleting(id);
+    setConfirmId(null);
     try {
       const res = await fetch(`/api/memories/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
@@ -98,7 +100,23 @@ export default function MemoriesView() {
             onFocus={e => { (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--border-focus)'; }}
             onBlur={e  => { (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--border-base)';  }}
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 opacity-60 hover:opacity-100"
+              style={{ color: 'var(--text-muted)' }}
+              aria-label="Effacer la recherche"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
+        {query && !loading && (
+          <p className="mt-2 text-xs" style={{ color: 'var(--text-dimmed)' }}>
+            {filtered.length} résultat{filtered.length > 1 ? 's' : ''} sur {memories.length}
+          </p>
+        )}
       </div>
 
       {/* Grid */}
@@ -121,7 +139,7 @@ export default function MemoriesView() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <AnimatePresence initial={false}>
               {filtered.map((memory, i) => (
                 <motion.div
@@ -142,19 +160,46 @@ export default function MemoriesView() {
                   </p>
                   <div className="flex items-center justify-between mt-auto pt-1">
                     <span className="t-caption text-xs text-dimmed">{timeAgo(memory.created_at)}</span>
-                    <motion.button
-                      type="button"
-                      onClick={() => handleDelete(memory.id)}
-                      disabled={deleting === memory.id}
-                      whileTap={{ scale: 0.9 }}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all"
-                      style={{ color: 'var(--color-error)' }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'rgba(239,68,68,0.1)'; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = ''; }}
-                      aria-label="Supprimer le souvenir"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </motion.button>
+                    {confirmId === memory.id ? (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs" style={{ color: 'var(--color-error)' }}>Supprimer ?</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(memory.id)}
+                          disabled={deleting === memory.id}
+                          className="p-1 rounded-lg transition-colors"
+                          style={{ color: 'var(--color-error)', backgroundColor: 'rgba(239,68,68,0.12)' }}
+                          aria-label="Confirmer la suppression"
+                        >
+                          {deleting === memory.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Check className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmId(null)}
+                          disabled={deleting === memory.id}
+                          className="p-1 rounded-lg transition-colors hover:bg-[var(--bg-active)]"
+                          style={{ color: 'var(--text-muted)' }}
+                          aria-label="Annuler"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <motion.button
+                        type="button"
+                        onClick={() => setConfirmId(memory.id)}
+                        whileTap={{ scale: 0.9 }}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all"
+                        style={{ color: 'var(--color-error)' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = 'rgba(239,68,68,0.1)'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = ''; }}
+                        aria-label="Supprimer le souvenir"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </motion.button>
+                    )}
                   </div>
                 </motion.div>
               ))}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Code, Plus, Trash2, RefreshCw, FileCode, X, Search, Layers3, Clock3 } from 'lucide-react';
+import { Code, Plus, Trash2, RefreshCw, FileCode, X, Search, Layers3, Clock3, Copy, Check, Loader2 } from 'lucide-react';
 import { useToast } from '../components/ui/Toast.js';
 import { useConfirm } from '../components/ui/ConfirmDialog.js';
 import { ViewHeader } from '../components/ui/ViewHeader.js';
@@ -30,6 +30,18 @@ export default function ListsView() {
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    if (!selected?.content) return;
+    try {
+      await navigator.clipboard.writeText(selected.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toastError('Impossible de copier dans le presse-papiers');
+    }
+  }, [selected, toastError]);
 
   const loadSnippets = useCallback(async () => {
     setLoading(true);
@@ -69,6 +81,16 @@ export default function ListsView() {
   }, [toastError]);
 
   useEffect(() => { loadSnippets(); }, [loadSnippets]);
+
+  // Fermeture au clavier (Échap) de la modale de création.
+  useEffect(() => {
+    if (!showCreateModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && activeAction !== 'create') setShowCreateModal(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showCreateModal, activeAction]);
 
   const handleCreateSnippet = useCallback(async (name?: string, content?: string) => {
     const finalName = name || newName;
@@ -275,16 +297,30 @@ export default function ListsView() {
                   <div className="rounded-2xl p-4" style={{ backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-base)' }}>
                     <div className="flex items-center justify-between gap-3 mb-3">
                       <p className="text-xs uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Code</p>
-                      <button
-                        type="button"
-                        onClick={handleDeleteSnippet}
-                        disabled={activeAction === 'delete'}
-                        className="inline-flex items-center gap-2 rounded-xl px-3 py-1 text-xs font-semibold"
-                        style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: 'var(--color-error)' }}
-                      >
-                        <Trash2 className="w-3.5 h-3.5 inline-block" />
-                        Supprimer le snippet
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCopy}
+                          disabled={!selected.content}
+                          className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-semibold transition-colors disabled:opacity-40"
+                          style={{ backgroundColor: 'var(--bg-secondary)', color: copied ? 'var(--color-success)' : 'var(--text-secondary)' }}
+                        >
+                          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                          {copied ? 'Copié' : 'Copier'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeleteSnippet}
+                          disabled={activeAction === 'delete'}
+                          className="inline-flex items-center gap-2 rounded-xl px-3 py-1 text-xs font-semibold disabled:opacity-50"
+                          style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: 'var(--color-error)' }}
+                        >
+                          {activeAction === 'delete'
+                            ? <Loader2 className="w-3.5 h-3.5 inline-block animate-spin" />
+                            : <Trash2 className="w-3.5 h-3.5 inline-block" />}
+                          Supprimer le snippet
+                        </button>
+                      </div>
                     </div>
                     <div className="mt-3">
                       <pre className="rounded-xl p-4 text-sm font-mono overflow-x-auto custom-scrollbar" style={{ backgroundColor: 'var(--bg-panel)', color: 'var(--text-primary)', border: '1px solid var(--border-base)' }}>
@@ -364,12 +400,14 @@ export default function ListsView() {
                 <button
                   type="button"
                   onClick={() => handleCreateSnippet()}
-                  disabled={activeAction === 'create'}
-                  className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold"
+                  disabled={activeAction === 'create' || !newName.trim()}
+                  className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-opacity disabled:opacity-50"
                   style={{ backgroundColor: 'var(--accent-primary)', color: '#fff' }}
                 >
-                  <Plus className="w-4 h-4" />
-                  Créer le snippet
+                  {activeAction === 'create'
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <Plus className="w-4 h-4" />}
+                  {activeAction === 'create' ? 'Création…' : 'Créer le snippet'}
                 </button>
               </div>
             </motion.div>

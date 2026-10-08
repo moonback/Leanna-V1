@@ -178,6 +178,20 @@ export function StartupProjectModal() {
     }
   }, [pathname]);
 
+  // Fermeture au clavier (Échap) — seulement si une opération n'est pas en cours.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (cloneStatus === 'cloning' || ftpStatus === 'downloading' || loading) return;
+      handleClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // handleClose dépend de currentPath via la closure ; isOpen + statuts suffisent au re-bind.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, cloneStatus, ftpStatus, loading, currentPath]);
+
   // Écouteur global pour ouvrir le switcher depuis n'importe où dans l'application
   useEffect(() => {
     const handleOpenModal = async () => {
