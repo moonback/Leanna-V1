@@ -472,12 +472,22 @@ export function createAgentsRouter(skillManager: SkillManager): Router {
       // Construire le mapping complet
       const toolMapping: Record<string, string> = {};
       const allTools = new Set<string>();
-      
-      // Obtenir tous les agents et leurs outils
+
+      // Source de vérité : outils RÉELLEMENT exécutables (ToolRegistry).
+      // Sert à filtrer les attributions explicites fantômes (noms déclarés dans
+      // SENSITIVE_TOOL_ATTRIBUTION mais sans outil enregistré) qui gonflaient le
+      // total servi au renderer au-delà du nombre réel d'outils (cf. 228 vs 230).
+      const executableTools = new Set(
+        skillManager.getToolDeclarations().map((d: any) => d.name)
+      );
+
+      // Obtenir tous les agents et leurs outils. On n'injecte que les
+      // capabilities qui correspondent à un outil réellement exécutable.
       const allAgents = Object.keys(STATIC_AGENT_REGISTRY);
       for (const role of allAgents) {
         const tools = getToolsForAgent(role);
         for (const tool of tools) {
+          if (!executableTools.has(tool)) continue;
           if (!allTools.has(tool)) {
             allTools.add(tool);
             toolMapping[tool] = role;
@@ -488,7 +498,11 @@ export function createAgentsRouter(skillManager: SkillManager): Router {
       // Inclure aussi les outils portant une attribution explicite du
       // ToolRegistry (source de vérité), même s'ils ne sont capability
       // d'aucun rôle. getPrimaryAgentForTool applique la priorité attribution.
+      // On IGNORE les attributions dont l'outil n'est pas enregistré : le socle
+      // sensible déclare statiquement des noms qui n'apparaissent que selon la
+      // config active, et le mapping ne doit exposer que des outils réels.
       for (const tool of getExplicitlyAttributedTools()) {
+        if (!executableTools.has(tool)) continue;
         if (!allTools.has(tool)) {
           allTools.add(tool);
         }
@@ -499,8 +513,7 @@ export function createAgentsRouter(skillManager: SkillManager): Router {
       // l'attribution sémantique par catégorie (priorité 3) atteigne l'UI.
       // Sans cette passe, les outils non-capability tombaient sur 'system'
       // côté renderer faute d'être présents dans le mapping injecté.
-      for (const decl of skillManager.getToolDeclarations()) {
-        const tool = decl.name;
+      for (const tool of executableTools) {
         if (!allTools.has(tool)) {
           allTools.add(tool);
           toolMapping[tool] = getPrimaryAgentForTool(tool);
@@ -530,11 +543,17 @@ export function createAgentsRouter(skillManager: SkillManager): Router {
       // Obtenir le mapping principal
       const mapping: Record<string, string> = {};
       const allTools = new Set<string>();
-      
+
+      // Source de vérité : outils réellement exécutables (voir /tool-mapping).
+      const executableTools = new Set(
+        skillManager.getToolDeclarations().map((d: any) => d.name)
+      );
+
       const allAgents = Object.keys(STATIC_AGENT_REGISTRY);
       for (const role of allAgents) {
         const tools = getToolsForAgent(role);
         for (const tool of tools) {
+          if (!executableTools.has(tool)) continue;
           if (!allTools.has(tool)) {
             allTools.add(tool);
             mapping[tool] = getPrimaryAgentForTool(tool);
@@ -543,8 +562,10 @@ export function createAgentsRouter(skillManager: SkillManager): Router {
       }
       
       // Outils à attribution explicite (ToolRegistry) : priment et sont
-      // exposés même sans rôle capability correspondant.
+      // exposés même sans rôle capability correspondant — mais UNIQUEMENT s'ils
+      // sont réellement enregistrés (évite les noms fantômes du socle sensible).
       for (const tool of getExplicitlyAttributedTools()) {
+        if (!executableTools.has(tool)) continue;
         allTools.add(tool);
         mapping[tool] = getPrimaryAgentForTool(tool);
       }
@@ -552,8 +573,7 @@ export function createAgentsRouter(skillManager: SkillManager): Router {
       // Énumérer TOUS les outils exécutables pour que l'attribution par
       // catégorie (priorité 3) soit servie au renderer plutôt que résolue
       // en 'system' faute de présence dans le mapping.
-      for (const decl of skillManager.getToolDeclarations()) {
-        const tool = decl.name;
+      for (const tool of executableTools) {
         if (!allTools.has(tool)) {
           allTools.add(tool);
           mapping[tool] = getPrimaryAgentForTool(tool);
