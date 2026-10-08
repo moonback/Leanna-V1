@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useToast } from '../components/ui/Toast.js';
+import { useConfirm } from '../components/ui/ConfirmDialog.js';
 import { ViewHeader } from '../components/ui/ViewHeader.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -224,6 +225,7 @@ export default function DocumentsView() {
 
 function DocumentsTab() {
   const { success, error: toastError } = useToast();
+  const { confirm } = useConfirm();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [workspaceDocuments, setWorkspaceDocuments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -318,6 +320,15 @@ function DocumentsTab() {
   }, [searchQuery, toastError]);
 
   const handleDelete = useCallback(async (id: string) => {
+    const doc = documents.find(d => d.id === id);
+    const confirmed = await confirm({
+      title: 'Supprimer le document',
+      message: `Supprimer « ${doc?.title || 'ce document'} » de la base de connaissances ? Cette action est irréversible.`,
+      confirmLabel: 'Supprimer',
+      cancelLabel: 'Annuler',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
     try {
       const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
@@ -326,7 +337,7 @@ function DocumentsTab() {
     } catch {
       toastError('Impossible de supprimer');
     }
-  }, [success, toastError]);
+  }, [success, toastError, documents, confirm]);
 
   const [showUrlForm, setShowUrlForm] = useState(false);
   const [urlInput, setUrlInput] = useState('');
@@ -719,6 +730,7 @@ function DocumentsTab() {
 
 function MemoryTab() {
   const { success, error: toastError } = useToast();
+  const { confirm } = useConfirm();
   const [facts, setFacts] = useState<UnifiedFact[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterCategory, setFilterCategory] = useState('');
@@ -805,6 +817,14 @@ function MemoryTab() {
   }, [newFact, success, toastError, loadFacts]);
 
   const handleDeleteFact = useCallback(async (id: string) => {
+    const confirmed = await confirm({
+      title: 'Supprimer le fait',
+      message: 'Supprimer ce fait de la mémoire ? Cette action est irréversible.',
+      confirmLabel: 'Supprimer',
+      cancelLabel: 'Annuler',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
     try {
       await fetch(`/api/documents/facts/${id}`, { method: 'DELETE' });
       setFacts(prev => prev.filter(f => f.id !== id));
@@ -812,7 +832,7 @@ function MemoryTab() {
     } catch {
       toastError('Erreur');
     }
-  }, [success, toastError]);
+  }, [success, toastError, confirm]);
 
   // Catégories pour les documents + catégories pour la mémoire projet
   const categories = [

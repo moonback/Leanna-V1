@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { History, Search, Trash2, RefreshCw, MessageSquare, User, Cpu, ArrowRight } from 'lucide-react';
+import { History, Search, Trash2, RefreshCw, MessageSquare, User, Cpu, ArrowRight, Loader2, X } from 'lucide-react';
 import { useToast } from '../components/ui/Toast.js';
+import { useConfirm } from '../components/ui/ConfirmDialog.js';
 import { ViewHeader } from '../components/ui/ViewHeader.js';
 
 interface Conversation {
@@ -44,6 +45,7 @@ function formatDate(dateStr: string): string {
 
 export default function HistoryView() {
   const { success, error: toastError } = useToast();
+  const { confirm } = useConfirm();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -65,12 +67,22 @@ export default function HistoryView() {
 
   const filtered = conversations.filter(c => {
     if (query.length === 0) return true;
-    const title = (c.title || '').toLowerCase();
-    return title.includes(query.toLowerCase());
+    const q = query.toLowerCase();
+    return (c.title || '').toLowerCase().includes(q) ||
+      (c.summary || '').toLowerCase().includes(q);
   });
 
   const handleDelete = useCallback(async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const conv = conversations.find(c => c.id === id);
+    const confirmed = await confirm({
+      title: 'Supprimer la conversation',
+      message: `Supprimer « ${conv?.title || 'Conversation sans titre'} » ? Cette action est irréversible.`,
+      confirmLabel: 'Supprimer',
+      cancelLabel: 'Annuler',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
     setDeleting(id);
     try {
       const res = await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
@@ -86,7 +98,7 @@ export default function HistoryView() {
     } finally {
       setDeleting(null);
     }
-  }, [success, toastError, selectedId]);
+  }, [success, toastError, selectedId, conversations, confirm]);
 
   const handleSelect = useCallback(async (id: string) => {
     setSelectedId(id);
@@ -137,8 +149,8 @@ export default function HistoryView() {
                 type="text"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder="Rechercher une conversation..."
-                className="w-full pl-8 pr-3 py-2.5 rounded-lg text-xs outline-none transition focus:ring-2"
+                placeholder="Rechercher (titre ou résumé)…"
+                className="w-full pl-8 pr-8 py-2.5 rounded-lg text-xs outline-none transition focus:ring-2"
                 style={{
                   backgroundColor: 'var(--notebook-surface-muted)',
                   border: '1px solid var(--notebook-border)',
@@ -147,7 +159,23 @@ export default function HistoryView() {
                 }}
                 aria-label="Rechercher dans les conversations"
               />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 opacity-60 hover:opacity-100"
+                  style={{ color: 'var(--text-muted)' }}
+                  aria-label="Effacer la recherche"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
+            {query && !loading && (
+              <p className="mt-2 text-xs" style={{ color: 'var(--text-dimmed)' }}>
+                {filtered.length} résultat{filtered.length > 1 ? 's' : ''} sur {conversations.length}
+              </p>
+            )}
           </div>
 
           {/* List */}
@@ -232,7 +260,9 @@ export default function HistoryView() {
                           aria-label={`Supprimer ${conv.title || 'la conversation'}`}
                           title="Supprimer"
                         >
-                          <Trash2 className="h-3 w-3" />
+                          {deleting === conv.id
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : <Trash2 className="h-3 w-3" />}
                         </button>
                       </div>
                     </div>
