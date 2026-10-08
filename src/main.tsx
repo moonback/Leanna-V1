@@ -39,6 +39,7 @@ const MissionTimelineView = lazy(() => import('./views/MissionTimelineView.js'))
 const MissionSimulationView = lazy(() => import('./views/MissionSimulationView.js'));
 const AgentSwarmView = lazy(() => import('./views/AgentSwarmView.js'));
 const ExplainabilityView = lazy(() => import('./views/ExplainabilityView.js'));
+const ChatGeneralisteView = lazy(() => import('./views/ChatGeneralisteView.js'));
 // Typographie : Arial (police système) — aucun fichier de police à charger.
 import './index.css';
 
@@ -456,8 +457,9 @@ function LoadingFallback() {
 
 function FloatingOrbWrapper() {
   const { pathname } = useLocation();
-  // Hide on IDE views — the ChatPanel replaces it there
-  if (pathname === '/' || pathname === '/ide') return null;
+  // Hide on IDE views — the ChatPanel replaces it there.
+  // Hide on the generalist chat — it is its own full conversation surface.
+  if (pathname === '/' || pathname === '/ide' || pathname === '/chat') return null;
   return <FloatingOrb />;
 }
 function NavSidebar() {
@@ -474,7 +476,7 @@ function NavSidebar() {
 /** Persistent agent status strip — hidden on the IDE (it has its own StatusBar). */
 function GlobalAgentStatusBar() {
   const { pathname } = useLocation();
-  if (pathname === '/' || pathname === '/ide') return null;
+  if (pathname === '/' || pathname === '/ide' || pathname === '/chat') return null;
   return <AgentStatusBar />;
 }
 
@@ -516,6 +518,7 @@ function AnimatedRoutes() {
         <Route path="/mission-simulation" element={wrap(<MissionSimulationView />)} />
         <Route path="/agent-swarm"   element={wrap(<AgentSwarmView />)} />
         <Route path="/explainability" element={wrap(<ExplainabilityView />)} />
+        <Route path="/chat"          element={wrap(<ChatGeneralisteView />)} />
       </Routes>
     </AnimatePresence>
   );

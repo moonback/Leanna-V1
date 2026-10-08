@@ -47,6 +47,12 @@ interface ToolGroup { id: string; label: string; items: ToolItem[] }
 
 const NAV_GROUPS: NavGroup[] = [
   {
+    id: 'assistante', label: 'Assistante',
+    items: [
+      { id: 'chat', path: '/chat', label: 'Chat', icon: MessageCircle },
+    ],
+  },
+  {
     id: 'pilotage', label: 'Pilotage',
     items: [
       { id: 'mission-control', path: '/mission-control', label: 'Mission Control', icon: LayoutDashboard },

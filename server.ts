@@ -38,6 +38,8 @@ import { createBrowserRouter } from "./server/routes/browser.js";
 import { attachLiveWebSocket } from "./server/live/LiveSocketHandler.js";
 import { VoicePresence, voicePresenceEnabled, voicePresenceOptionsFromEnv } from "./server/live/VoicePresence.js";
 import { attachNotebookLiveWebSocket } from "./server/live/NotebookLiveSocketHandler.js";
+import { attachGeneralChatWebSocket } from "./server/live/GeneralChatSocketHandler.js";
+import { attachGeneralChatLiveVoiceWebSocket } from "./server/live/GeneralChatLiveVoiceSocketHandler.js";
 import { createExportRouter } from "./server/routes/export.js";
 
 import { createGithubRouter } from "./server/routes/github.js";
@@ -946,6 +948,16 @@ async function startServer() {
   // (« Interrogez vos sources »). Indépendant de la session Live globale /live.
   const notebookLiveWss = new WebSocketServer({ noServer: true });
 
+  // WebSocket server dédié au chat texte « généraliste » épuré (/chat-live).
+  // Léger : pas d'audio ni d'outils IDE, uniquement les outils utilitaires du
+  // quotidien (météo, actualités, encyclopédie) via le function-calling Gemini.
+  const generalChatWss = new WebSocketServer({ noServer: true });
+
+  // WebSocket server dédié au MODE VOCAL du chat généraliste (/chat-live-voice).
+  // Session Gemini Live audio (STT/TTS) groundée sur le persona généraliste +
+  // les mêmes outils utilitaires du quotidien.
+  const generalChatVoiceWss = new WebSocketServer({ noServer: true });
+
   // WebSocket server dédié pour la timeline d'autonomie (lecture seule, aucun
   // session Gemini — contrairement à /live). Diffuse uniquement les événements
   // autonomy:* déjà émis par le runtime.
@@ -1095,7 +1107,7 @@ async function startServer() {
     // Sécurité : on exige le même jeton que pour les routes /api (passé en
     // cookie uniquement, plus de fallback par query string pour éviter
     // l'exposition du token dans les logs).
-    if (pathname === '/live' || pathname === '/sandbox-watch' || pathname === '/autonomy' || pathname === '/notebook-live') {
+    if (pathname === '/live' || pathname === '/sandbox-watch' || pathname === '/autonomy' || pathname === '/notebook-live' || pathname === '/chat-live' || pathname === '/chat-live-voice') {
       const cookieHeader = request.headers.cookie || '';
       const cookies: Record<string, string> = {};
       cookieHeader.split(';').forEach(c => {
@@ -1134,6 +1146,14 @@ async function startServer() {
       notebookLiveWss.handleUpgrade(request, socket, head, (ws) => {
         notebookLiveWss.emit('connection', ws, request);
       });
+    } else if (pathname === '/chat-live') {
+      generalChatWss.handleUpgrade(request, socket, head, (ws) => {
+        generalChatWss.emit('connection', ws, request);
+      });
+    } else if (pathname === '/chat-live-voice') {
+      generalChatVoiceWss.handleUpgrade(request, socket, head, (ws) => {
+        generalChatVoiceWss.emit('connection', ws, request);
+      });
     } else {
       // In dev, Vite's own upgrade listener (registered via hmr.server)
       // handles the HMR WebSocket — just return and let it process.
@@ -1163,6 +1183,26 @@ async function startServer() {
   attachNotebookLiveWebSocket(notebookLiveWss, {
     getCurrentProfile: () => currentProfile,
     createGeminiAI: getGeminiAI,
+    activeGeminiSessions,
+  });
+
+  // ── Chat texte « généraliste » épuré (/chat-live) ───────────────────────
+  // Réutilise le system prompt généraliste + les outils utilitaires du
+  // quotidien, sans la machinerie Live (audio/IDE/superviseur).
+  attachGeneralChatWebSocket(generalChatWss, {
+    getCurrentProfile: () => currentProfile,
+    createGeminiAI: getGeminiAI,
+    handleToolCall: (name: string, args: any) => skillManager.handleToolCall(name, args),
+    getToolDeclarations: (skillIds: string[]) => skillManager.getToolDeclarations(skillIds),
+  });
+
+  // ── Mode vocal du chat généraliste (/chat-live-voice) ───────────────────
+  // Session Gemini Live audio réutilisant le persona + les outils utilitaires.
+  attachGeneralChatLiveVoiceWebSocket(generalChatVoiceWss, {
+    getCurrentProfile: () => currentProfile,
+    createGeminiAI: getGeminiAI,
+    handleToolCall: (name: string, args: any) => skillManager.handleToolCall(name, args),
+    getToolDeclarations: (skillIds: string[]) => skillManager.getToolDeclarations(skillIds),
     activeGeminiSessions,
   });
 
