@@ -182,10 +182,7 @@ export default function SettingsView() {
               </p>
             </div>
           </div>
-          <span className="rounded-full px-2 py-0.5 text-xs font-mono font-bold"
-            style={{ backgroundColor: 'color-mix(in srgb, #10b981 12%, transparent)', color: '#10b981' }}>
-            SELF-IDE
-          </span>
+          
         </div>
 
         {/* Search input */}
