@@ -334,10 +334,49 @@ interface TerminalTabPanelProps {
   devServerPort?: number;
 }
 
+// Dériver un label de shell propre à partir du chemin réel renvoyé par le backend
+function deriveShellLabel(shellPath: string): string {
+  const lower = shellPath.toLowerCase();
+  if (lower.includes('pwsh') || lower.includes('powershell')) return 'PowerShell';
+  if (lower.includes('cmd.exe')) return 'CMD';
+  if (lower.includes('git') && lower.includes('bash')) return 'Git Bash';
+  if (lower.includes('bash')) return 'Bash';
+  if (lower.includes('zsh')) return 'Zsh';
+  if (lower.includes('sh')) return 'sh';
+  // Fallback : nom de fichier sans extension
+  const base = shellPath.split(/[\\/]/).pop() || shellPath;
+  return base.replace(/\.exe$/i, '') || shellPath;
+}
+
 const TerminalTabPanel: React.FC<TerminalTabPanelProps> = memo(({ tab, isActive, onSendInput, onClear, onRename, cwd, onRegisterRef, onOpenBrowser, devServerPort }) => {
   const [state, actions] = useTerminal(120, 40);
   const { isConnected, output, error, isConnecting } = state;
   const { sendInput, close: closeConnection, clear: clearTerminal } = actions;
+
+  // Shell réel + répertoire de travail détectés depuis l'output du backend
+  // (le backend envoie une bannière "Shell: ..." / "Working directory: ..." au démarrage)
+  const [detectedShell, setDetectedShell] = useState<string | null>(null);
+  const [detectedCwd, setDetectedCwd] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!output) return;
+    if (!detectedShell) {
+      const shellMatch = output.match(/Shell:\s*(.+)/i);
+      if (shellMatch?.[1]) {
+        setDetectedShell(deriveShellLabel(shellMatch[1].trim()));
+      }
+    }
+    if (!detectedCwd) {
+      const cwdMatch = output.match(/Working directory:\s*(.+)/i);
+      if (cwdMatch?.[1]) {
+        setDetectedCwd(cwdMatch[1].trim());
+      }
+    }
+  }, [output, detectedShell, detectedCwd]);
+
+  // Shell et cwd affichés : priorité à ce que le backend rapporte réellement
+  const displayShell = detectedShell ?? tab.shell;
+  const displayCwd = cwd || detectedCwd || '~';
 
   const [inputValue, setInputValue] = useState('');
   const [history, setHistory] = useState<string[]>([]);
@@ -593,7 +632,8 @@ const TerminalTabPanel: React.FC<TerminalTabPanelProps> = memo(({ tab, isActive,
         display: 'flex',
         alignItems: 'center',
         gap: 'var(--space-2)',
-        padding: 'var(--space-2) var(--space-3)',
+        height: '32px',
+        padding: '0 var(--space-3)',
         backgroundColor: 'var(--bg-secondary)',
         borderBottom: '1px solid var(--border-base)',
         fontSize: 'var(--text-xs)',
@@ -602,16 +642,41 @@ const TerminalTabPanel: React.FC<TerminalTabPanelProps> = memo(({ tab, isActive,
         width: '100%',
       }}>
         <Server size={12} style={{ color: 'var(--accent-primary)', flexShrink: 0 }} />
-        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {tab.shell} - {cwd || '~'}
+        <span style={{
+          flexShrink: 0,
+          fontWeight: 600,
+          color: 'var(--text-primary)',
+          whiteSpace: 'nowrap',
+        }}>
+          {displayShell}
         </span>
-        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <span style={{ color: 'var(--text-dimmed)', flexShrink: 0 }}>·</span>
+        <span style={{
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          fontFamily: 'var(--font-mono)',
+          direction: 'rtl',
+          textAlign: 'left',
+        }} title={displayCwd}>
+          {displayCwd}
+        </span>
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
           {isConnected ? (
-            <span style={{ color: 'var(--color-success)', fontSize: '8px' }}>● Connected</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--color-success)', fontSize: 'var(--text-xs)' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-success)', boxShadow: '0 0 6px var(--color-success)' }} />
+              Connecté
+            </span>
           ) : isConnecting ? (
-            <span style={{ color: 'var(--color-warning)', fontSize: '8px' }}>○ Connecting...</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--color-warning)', fontSize: 'var(--text-xs)' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-warning)' }} />
+              Connexion…
+            </span>
           ) : (
-            <span style={{ color: 'var(--color-error)', fontSize: '8px' }}>● Disconnected</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--color-error)', fontSize: 'var(--text-xs)' }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-error)' }} />
+              Déconnecté
+            </span>
           )}
           {isRenaming ? (
             <form onSubmit={handleRenameSubmit} style={{ display: 'flex', gap: 'var(--space-1)' }}>
@@ -828,34 +893,39 @@ const TerminalTabPanel: React.FC<TerminalTabPanelProps> = memo(({ tab, isActive,
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        padding: 'var(--space-2) var(--space-3)',
+        minHeight: '40px',
+        padding: 'var(--space-1) var(--space-3)',
         backgroundColor: 'var(--bg-secondary)',
         borderTop: '1px solid var(--border-base)',
         gap: 'var(--space-2)',
         width: '100%',
       }}>
         <span style={{
+          color: isConnected ? 'var(--color-success)' : isConnecting ? 'var(--color-warning)' : 'var(--color-error)',
+          display: 'inline-flex',
+          alignItems: 'center',
+          flexShrink: 0,
+        }}>
+          {isConnected ? <Check size={13} /> : isConnecting ? <Clock size={13} /> : <X size={13} />}
+        </span>
+        <span style={{
           color: 'var(--accent-primary)',
           fontFamily: 'var(--font-mono)',
           fontSize: 'var(--text-sm)',
-          fontWeight: 600,
+          fontWeight: 700,
           whiteSpace: 'nowrap',
+          flexShrink: 0,
         }}>
-          {tab.title}
+          {displayCwd}
         </span>
         <span style={{
-          color: 'var(--text-muted)',
+          color: 'var(--accent-primary)',
           fontFamily: 'var(--font-mono)',
           fontSize: 'var(--text-sm)',
-          whiteSpace: 'nowrap',
+          fontWeight: 700,
+          flexShrink: 0,
         }}>
-          {cwd || '~'}
-        </span>
-        <span style={{
-          color: isConnected ? 'var(--color-success)' : isConnecting ? 'var(--color-warning)' : 'var(--color-error)',
-          fontSize: 'var(--text-sm)',
-        }}>
-          {isConnected ? <Check size={13} /> : isConnecting ? <Clock size={13} /> : <X size={13} />}
+          ❯
         </span>
         <input
           ref={inputRef}
@@ -919,7 +989,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(({ onC
   const [searchMatches, setSearchMatches] = useState<number[]>([]);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
   const [showSearch, setShowSearch] = useState(false);
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>('workspace');
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>('sandbox');
   const [sandboxPath, setSandboxPath] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -959,6 +1029,19 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(({ onC
       window.removeEventListener('Leanna-sandbox-file-changed', handleSandboxChange);
     };
   }, []);
+
+  // Le mode sandbox est le défaut : dès que le chemin du sandbox est connu
+  // (récupération asynchrone), aligner le cwd des onglets dessus. Si aucun
+  // sandbox n'est actif, retomber sur le workspace réel.
+  useEffect(() => {
+    const targetCwd = executionMode === 'sandbox' && sandboxPath
+      ? sandboxPath
+      : initialCwd ?? '';
+    setTabs(prev => {
+      if (prev.every(tab => tab.cwd === targetCwd)) return prev;
+      return prev.map(tab => ({ ...tab, cwd: targetCwd }));
+    });
+  }, [executionMode, sandboxPath, initialCwd]);
 
   // Gérer le scroll horizontal des onglets avec la molette
   useEffect(() => {
@@ -1206,6 +1289,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(({ onC
       style={{
         backgroundColor: 'var(--bg-panel)',
         border: '1px solid var(--border-base)',
+        borderTop: (isDocked || isMinimized) && !isFullscreen ? '2px solid var(--accent-primary)' : '1px solid var(--border-base)',
         borderRadius: isFullscreen ? '0' : isMinimized ? 'var(--radius-md) var(--radius-md) 0 0' : isDocked ? 'var(--radius-md) var(--radius-md) 0 0' : 'var(--radius-lg)',
         display: 'flex',
         flexDirection: 'column',
@@ -1219,7 +1303,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(({ onC
         left: isFullscreen ? 0 : isMinimized ? (showExplorer ? `${56 + explorerWidth}px` : '56px') : isDocked ? (showExplorer ? `${56 + explorerWidth}px` : '56px') : '50%',
         bottom: isFullscreen ? 0 : isMinimized ? '0' : isDocked ? '0' : undefined,
         zIndex: 'var(--z-terminal)' as any,
-        boxShadow: isFullscreen ? 'none' : isMinimized ? '0 4px 12px rgba(0, 0, 0, 0.3)' : isDocked ? '0 -4px 20px rgba(0, 0, 0, 0.3)' : '0 4px 20px rgba(0, 0, 0, 0.3)',
+        boxShadow: isFullscreen ? 'none' : isMinimized ? '0 -2px 16px rgba(0, 0, 0, 0.45)' : isDocked ? '0 -8px 32px rgba(0, 0, 0, 0.5)' : '0 12px 48px rgba(0, 0, 0, 0.5)',
         transform: isMinimized ? 'none' : isDocked ? 'none' : 'translate(-50%, -50%)',
         resize: isDocked ? 'vertical' : 'none',
         overflow: 'hidden',
@@ -1321,7 +1405,7 @@ const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(({ onC
                 }}
                 onMouseEnter={e => {
                   if (tabs.length > 1) {
-                    (e.target as HTMLButtonElement).style.color = 'var(--color-danger)';
+                    (e.target as HTMLButtonElement).style.color = 'var(--color-error)';
                     (e.target as HTMLButtonElement).style.backgroundColor = 'var(--color-error-subtle)';
                   }
                 }}
