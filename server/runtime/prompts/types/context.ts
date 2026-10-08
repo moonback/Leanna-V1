@@ -50,6 +50,13 @@ export interface PromptContext {
   taskType: TaskType;
 
   /**
+   * true si le taskType a été DÉDUIT (du mode ou par défaut) plutôt que fourni
+   * explicitement par le runtime/classifieur (C8). Permet au pipeline d'adopter
+   * une posture conservative et de tracer les tâches non classifiées.
+   */
+  taskTypeInferred: boolean;
+
+  /**
    * Fournisseur de modèle actif pour la session.
    * Les sections/directives spécifiques à un fournisseur (ex : raisonnement
    * interne natif de Gemini) sont gardées via `when(ctx => ctx.provider === ...)`.

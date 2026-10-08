@@ -24,7 +24,7 @@ import {
   LayoutDashboard, Milestone, FlaskConical, Network, HelpCircle, Gauge,
   Code2, Zap, NotebookPen, FileText, Github, BrainCircuit, History, ListChecks,
   BarChart2, Settings, PanelLeftClose, PanelLeftOpen,
-  Power, MessageCircle, Mic, MicOff, Sparkles, Bot, ArrowLeft,
+  Power, MessageCircle, Mic, MicOff, Sparkles, Bot, ArrowLeft, LogOut,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext.js';
 import { useAgentStatus } from '../hooks/useAgentStatus.js';
@@ -137,6 +137,10 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
     [pathname],
   );
 
+  const handleQuit = () => {
+    window.close();
+  };
+
   const toolGroups = mode === 'ide' ? buildToolGroups(props) : [];
 
   const width = collapsed ? 56 : 220;
@@ -238,15 +242,12 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
       {/* Grouped navigation (global routes) or tools (IDE) */}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {mode === 'ide' ? (
-          toolGroups.map((group, gi) => (
+          toolGroups.map((group) => (
             <div key={group.id} className="mb-1.5">
               {!collapsed && (
-                <p className="px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-dimmed)' }}>
+                <p className="px-4 pb-1.5 pt-3 text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-dimmed)' }}>
                   {group.label}
                 </p>
-              )}
-              {collapsed && gi > 0 && (
-                <div className="mx-2 my-1.5 h-px" style={{ backgroundColor: 'var(--border-base)' }} aria-hidden />
               )}
               <ul className="flex flex-col gap-0.5">
                 {group.items.map((item) => (
@@ -267,12 +268,9 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
           NAV_GROUPS.map((group) => (
             <div key={group.id} className="mb-1.5">
               {!collapsed && (
-                <p className="px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-dimmed)' }}>
+                <p className="px-4 pb-1.5 pt-3 text-[11px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-dimmed)' }}>
                   {group.label}
                 </p>
-              )}
-              {collapsed && group.id !== NAV_GROUPS[0].id && (
-                <div className="mx-2 my-1.5 h-px" style={{ backgroundColor: 'var(--border-base)' }} aria-hidden />
               )}
               <ul className="flex flex-col gap-0.5">
                 {group.items.map((item) => (
@@ -287,13 +285,29 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
       </div>
 
       {/* Footer — settings */}
-      <div className="border-t px-2 py-2" style={{ borderColor: 'var(--border-base)' }}>
-        <NavButton
-          item={{ id: 'settings', path: '/settings', label: 'Paramètres', icon: Settings }}
-          active={pathname === '/settings'}
-          collapsed={collapsed}
-          onClick={() => navigate('/settings')}
-        />
+      <div className="border-t mt-auto px-3 py-3" style={{ borderColor: 'var(--border-base)' }}>
+        <div className="flex items-center gap-1">
+          <div className="flex-1">
+            <NavButton
+              item={{ id: 'settings', path: '/settings', label: 'Paramètres', icon: Settings }}
+              active={pathname === '/settings'}
+              collapsed={collapsed}
+              onClick={() => navigate('/settings')}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleQuit}
+            title={collapsed ? 'Quitter' : undefined}
+            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
+            style={{ color: 'var(--text-secondary)' }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-hover)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+          >
+            <LogOut size={16} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+            <span className="sr-only">Quitter</span>
+          </button>
+        </div>
       </div>
 
       {/* Theme marker (invisible, keeps theme reactive for tooling) */}

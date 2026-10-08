@@ -67,10 +67,16 @@ export class SectionRegistry {
   /**
    * Retourne toutes les sections actives pour le contexte donné,
    * triées par priority croissante.
+   *
+   * @param context       Contexte résolu (scope + when).
+   * @param activeRuleIds IDs des règles actives après résolution des conflits.
+   *                      Utilisé pour appliquer `section.requires` (C7). Si
+   *                      omis, les dépendances `requires` ne sont pas vérifiées
+   *                      (rétrocompat pour les appelants sans pipeline de règles).
    */
-  select(context: PromptContext): PromptSection[] {
+  select(context: PromptContext, activeRuleIds?: ReadonlySet<string>): PromptSection[] {
     return [...this.sections.values()]
-      .filter(section => this.isActive(section, context))
+      .filter(section => this.isActive(section, context, activeRuleIds))
       .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
   }
 
@@ -94,10 +100,22 @@ export class SectionRegistry {
 
   // ─── Privé ────────────────────────────────────────────────────────────────
 
-  private isActive(section: PromptSection, context: PromptContext): boolean {
+  private isActive(
+    section: PromptSection,
+    context: PromptContext,
+    activeRuleIds?: ReadonlySet<string>,
+  ): boolean {
     // Condition runtime explicite
     if (section.when && !section.when(context)) {
       return false;
+    }
+
+    // Dépendances `requires` (C7) : la section n'est active que si TOUTES les
+    // règles dont elle dépend sont actives. Vérifié uniquement quand l'ensemble
+    // des règles actives est fourni par le pipeline.
+    if (activeRuleIds && section.requires && section.requires.length > 0) {
+      const allPresent = section.requires.every(id => activeRuleIds.has(id));
+      if (!allPresent) return false;
     }
 
     // Scope absent (undefined) → toujours active. Réservé aux sections

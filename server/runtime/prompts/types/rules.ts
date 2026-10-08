@@ -85,4 +85,24 @@ export interface PromptRule {
    * Ex : "safety.md", "rules/core.ts"
    */
   source?: string;
+
+  /**
+   * Si true, la règle est un garde-fou système : une fois le registre scellé
+   * (seal()), elle ne peut plus être remplacée (override) ni supprimée
+   * (unregister). Appliqué par défaut à toutes les règles P0 SAFETY et
+   * P1 AUTHORITY au chargement (voir rules/core.ts). (C2)
+   */
+  immutable?: boolean;
+
+  /**
+   * Niveau de restriction, utilisé comme départage DÉTERMINISTE quand deux
+   * règles en conflit ont la même priorité (C5). Plus la valeur est haute,
+   * plus la règle est restrictive. En cas d'égalité de priorité ET de
+   * restrictiveness, le ConflictResolver échoue fermé plutôt que de laisser
+   * l'ordre d'insertion décider.
+   *
+   * Convention : une règle qui INTERDIT ou exige une confirmation est plus
+   * restrictive (valeur haute) qu'une règle qui AUTORISE.
+   */
+  restrictiveness?: number;
 }

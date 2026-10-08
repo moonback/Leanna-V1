@@ -131,11 +131,32 @@ export class ConflictResolver {
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private pickWinner(a: PromptRule, b: PromptRule): [PromptRule, PromptRule] {
-    // Priorité numérique — le plus petit gagne
+    // 1. Priorité numérique — le plus petit gagne.
     if (a.priority < b.priority) return [a, b];
     if (b.priority < a.priority) return [b, a];
-    // Égalité de priorité → la règle déclarante (a) gagne par défaut
-    return [a, b];
+
+    // 2. Égalité de priorité (C5) — départage DÉTERMINISTE, jamais par ordre
+    //    d'insertion. La règle la plus restrictive gagne.
+    const ra = a.restrictiveness ?? 0;
+    const rb = b.restrictiveness ?? 0;
+    if (ra > rb) return [a, b];
+    if (rb > ra) return [b, a];
+
+    // 3. Égalité de priorité ET de restrictiveness → fail-closed.
+    //    On refuse de deviner : à ce stade, deux règles mutuellement
+    //    exclusives au même rang sans départage explicite sont une erreur de
+    //    configuration (détectée par PolicyValidator, C9). On la signale ici
+    //    de façon déterministe (tri par ID) pour que le résultat soit stable
+    //    quel que soit l'ordre d'enregistrement, et on lève pour les P0/P1.
+    if (a.priority <= 10) {
+      throw new Error(
+        `[ConflictResolver] Conflit P${a.priority} non départageable entre ` +
+        `"${a.id}" et "${b.id}" (même priorité, même restrictiveness). ` +
+        `Déclarez une 'restrictiveness' ou des priorités distinctes. (C5)`,
+      );
+    }
+    // Hors P0/P1 : départage stable par ordre lexicographique des IDs.
+    return a.id < b.id ? [a, b] : [b, a];
   }
 
   private buildReason(winner: PromptRule, loser: PromptRule): string {
@@ -145,6 +166,17 @@ export class ConflictResolver {
         `> P${loser.priority} (${loser.id})`
       );
     }
-    return `Priorités égales (${winner.priority}) : "${winner.id}" conservé par ordre de déclaration.`;
+    const rw = winner.restrictiveness ?? 0;
+    const rl = loser.restrictiveness ?? 0;
+    if (rw !== rl) {
+      return (
+        `Priorités égales (${winner.priority}) : "${winner.id}" plus restrictif ` +
+        `(restrictiveness ${rw} > ${rl}).`
+      );
+    }
+    return (
+      `Priorités égales (${winner.priority}) : départage déterministe par ID — ` +
+      `"${winner.id}" conservé.`
+    );
   }
 }

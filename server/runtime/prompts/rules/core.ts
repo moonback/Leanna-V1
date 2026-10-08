@@ -232,6 +232,12 @@ const routingRules: PromptRule[] = [
     content: `Le système multi-agents est désactivé. L'assistant agit seul. \`agent_delegate\` et \`agent_orchestrate\` ne sont pas disponibles. Toutes les modifications sont isolées dans la Sandbox.`,
     source: "SystemPromptBuilder.ts (solo mode)",
     conflictsWith: ["routing.deterministic-router"],
+    // Départage déterministe (C5) : ces deux règles sont mutuellement exclusives
+    // (gardées par des `when` complémentaires) et ne coexistent jamais. On
+    // déclare quand même une restrictiveness distincte pour que le départage
+    // soit déterministe si elles venaient à collisionner — le mode solo, qui
+    // interdit la délégation, est le plus restrictif et gagne.
+    restrictiveness: 1,
   },
 ];
 
@@ -337,12 +343,24 @@ const styleRules: PromptRule[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
+ * Marque une liste de règles comme immuables (garde-fous système).
+ * Appliqué aux P0 SAFETY et P1 AUTHORITY : après seal() du registre, elles ne
+ * peuvent plus être override/unregister. (C2)
+ */
+function asImmutable(rules: PromptRule[]): PromptRule[] {
+  return rules.map(r => ({ ...r, immutable: true }));
+}
+
+/**
  * Toutes les règles core, dans l'ordre P0 → P7.
  * Utiliser registerAll(CORE_RULES) pour les charger dans un RuleRegistry.
+ *
+ * Les P0 (SAFETY) et P1 (AUTHORITY) sont marquées `immutable` : ce sont les
+ * garde-fous inviolables, protégés contre toute mutation post-boot.
  */
 export const CORE_RULES: PromptRule[] = [
-  ...safetyRules,
-  ...authorityRules,
+  ...asImmutable(safetyRules),
+  ...asImmutable(authorityRules),
   ...runtimeRules,
   ...taskRules,
   ...routingRules,

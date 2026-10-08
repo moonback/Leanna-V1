@@ -8,6 +8,54 @@ import type { PromptRule, RuleScope } from "./rules.js";
 import type { PromptContext } from "./context.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// PromptAuthority
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Niveau d'autorité d'une section, du plus fort au plus faible :
+ *
+ *   policy → system → task → runtime → data → untrusted
+ *
+ * Règle d'or : une section d'autorité `data` ou `untrusted` ne doit JAMAIS être
+ * rendue dans le même espace que la politique (`<policy>` / `<instructions>`).
+ * Elle est confinée dans un conteneur de données explicitement non-instruction.
+ *
+ * - `policy`    : règles de politique canoniques (équivalent sections P0/P1).
+ * - `system`    : sections système de confiance (base, safety, procédures).
+ * - `task`      : sections liées au type de tâche.
+ * - `runtime`   : contexte fourni par le runtime de confiance (workspace…).
+ * - `data`      : données runtime (userName, chemin workspace) — jamais instruction.
+ * - `untrusted` : contenu arbitraire fourni par le runtime (`extraSections`) —
+ *                 traité comme donnée hostile potentielle (anti-injection).
+ */
+export type PromptAuthority =
+  | "policy"
+  | "system"
+  | "task"
+  | "runtime"
+  | "data"
+  | "untrusted";
+
+/**
+ * Rang numérique d'autorité (plus petit = plus fort). Sert au compilateur pour
+ * garantir qu'une autorité faible ne peut jamais précéder une autorité forte.
+ */
+export const AUTHORITY_RANK: Record<PromptAuthority, number> = {
+  policy:    0,
+  system:    1,
+  task:      2,
+  runtime:   3,
+  data:      4,
+  untrusted: 5,
+};
+
+/** Autorités rendues comme DONNÉES (conteneur non-instruction), jamais comme consignes. */
+export const DATA_AUTHORITIES: ReadonlySet<PromptAuthority> = new Set<PromptAuthority>([
+  "data",
+  "untrusted",
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // PromptSection
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -19,6 +67,20 @@ import type { PromptContext } from "./context.js";
 export interface PromptSection {
   /** Identifiant unique de la section. */
   id: string;
+
+  /**
+   * Niveau d'autorité de la section. Défaut (si absent) : `system` pour les
+   * sections programmatiques/.md de confiance. Les contenus runtime arbitraires
+   * doivent explicitement déclarer `data` ou `untrusted`.
+   */
+  authority?: PromptAuthority;
+
+  /**
+   * IDs de règles qui doivent être actives pour que cette section soit incluse.
+   * Appliqué par SectionRegistry.select() à partir des règles résolues.
+   * Si une dépendance est absente, la section est exclue.
+   */
+  requires?: string[];
 
   /**
    * Ordre d'insertion. Plus petit = inséré plus tôt.

@@ -17,6 +17,13 @@ import type { PromptRule } from "./types/rules.js";
 export class RuleRegistry {
   private readonly rules = new Map<string, PromptRule>();
 
+  /**
+   * Une fois scellé (seal()), les garde-fous système (règles `immutable`) ne
+   * peuvent plus être remplacés ni supprimés. Les règles d'extension restent
+   * modifiables. (C2)
+   */
+  private sealed = false;
+
   // ─── Enregistrement ───────────────────────────────────────────────────────
 
   /**
@@ -43,17 +50,50 @@ export class RuleRegistry {
   }
 
   /**
-   * Remplace une règle existante (utile pour les overrides de test).
-   * Contrairement à register(), ne lance pas d'erreur si l'ID existe déjà.
+   * Scelle le registre : les règles système (`immutable`) deviennent
+   * inviolables. À appeler une seule fois, après le chargement des règles core.
+   */
+  seal(): void {
+    this.sealed = true;
+  }
+
+  /** Indique si le registre est scellé. */
+  get isSealed(): boolean {
+    return this.sealed;
+  }
+
+  /**
+   * Remplace une règle existante (utile pour les overrides de test et les
+   * règles d'extension).
+   *
+   * Refus (C2) :
+   *   - après seal(), remplacer une règle existante marquée `immutable` ;
+   *   - après seal(), tenter de « rétrograder » une règle immuable en non
+   *     immuable, ou d'écraser une règle immuable par une nouvelle définition.
    */
   override(rule: PromptRule): void {
+    const existing = this.rules.get(rule.id);
+    if (this.sealed && existing?.immutable) {
+      throw new Error(
+        `[RuleRegistry] Règle "${rule.id}" immuable : override interdit ` +
+        `après scellement du registre (garde-fou système P0/P1).`,
+      );
+    }
     this.rules.set(rule.id, rule);
   }
 
   /**
    * Supprime une règle.
+   * Refus (C2) : supprimer une règle `immutable` après seal().
    */
   unregister(id: string): boolean {
+    const existing = this.rules.get(id);
+    if (this.sealed && existing?.immutable) {
+      throw new Error(
+        `[RuleRegistry] Règle "${id}" immuable : unregister interdit ` +
+        `après scellement du registre (garde-fou système P0/P1).`,
+      );
+    }
     return this.rules.delete(id);
   }
 

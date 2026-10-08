@@ -8,8 +8,9 @@
  * via SystemPromptConfig, rendant le builder totalement déterministe.
  */
 
-import type { SystemPromptConfig } from "./types.js";
+import type { SystemPromptConfig, AgentRole } from "./types.js";
 import type { PromptContext, TaskType } from "./types/context.js";
+import { VALID_AGENT_ROLES } from "./PolicyValidator.js";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ContextResolver
@@ -26,10 +27,12 @@ export class ContextResolver {
    */
   resolve(config: SystemPromptConfig & { taskType?: TaskType } = {}): PromptContext {
     const mode = config.mode ?? "full";
+    const { taskType, taskTypeInferred } = this.resolveTaskType(config, mode);
 
     return {
       mode,
-      taskType: this.resolveTaskType(config),
+      taskType,
+      taskTypeInferred,
 
       // Défaut 'gemini' : préserve le comportement historique (directives Gemini
       // actives) quand le runtime ne fournit pas explicitement le fournisseur.
@@ -43,7 +46,8 @@ export class ContextResolver {
 
       agents: {
         enabled: config.agents?.enabled !== false, // activé par défaut
-        allowedRoles: config.agents?.allowedRoles,
+        // C10 : filtrer les rôles inconnus avant de les exposer au pipeline.
+        allowedRoles: this.sanitizeRoles(config.agents?.allowedRoles),
       },
 
       tools: {
@@ -55,29 +59,51 @@ export class ContextResolver {
       responseStyle: config.responseStyle,
 
       extraSections: config.extraSections?.map(s => ({
-        id:      s.id,
-        content: s.content,
-        // Les extra sections n'ont pas de scope : elles sont toujours incluses
+        id:        s.id,
+        content:   s.content,
+        // Les extra sections n'ont pas de scope : elles sont toujours incluses,
+        // mais marquées `untrusted` : contenu runtime arbitraire traité comme
+        // donnée hostile potentielle, jamais comme instruction système (C1).
+        authority: "untrusted" as const,
       })),
     };
   }
 
   // ─── Privé ────────────────────────────────────────────────────────────────
 
+  /**
+   * Filtre les rôles inconnus (C10). Retourne undefined si la liste d'origine
+   * était absente, pour préserver la sémantique « aucune restriction de rôle ».
+   */
+  private sanitizeRoles(roles: readonly unknown[] | undefined): AgentRole[] | undefined {
+    if (!Array.isArray(roles)) return undefined;
+    return roles.filter(
+      (r): r is AgentRole => typeof r === "string" && VALID_AGENT_ROLES.has(r),
+    );
+  }
+
   private resolveTaskType(
     config: SystemPromptConfig & { taskType?: TaskType },
-  ): TaskType {
-    // 1. Fourni explicitement — le builder est alors totalement déterministe
+    mode:   string,
+  ): { taskType: TaskType; taskTypeInferred: boolean } {
+    // 1. Fourni explicitement — le builder est alors totalement déterministe.
     if (config.taskType) {
-      return config.taskType;
+      return { taskType: config.taskType, taskTypeInferred: false };
     }
 
-    // 2. Déduction depuis le mode
-    if (config.mode === "ask") {
-      return "document";
+    // 2. Déduction sûre depuis le mode : "ask" ⇒ "document" (pas d'effet de bord).
+    if (mode === "ask") {
+      return { taskType: "document", taskTypeInferred: true };
     }
 
-    // 3. Défaut
-    return "general";
+    // 3. C8 : tâche à effet de bord (mode "full") sans taskType classifié.
+    //    On NE retombe PLUS silencieusement sur "general" (ce qui désactivait
+    //    les règles scopeées coding/debugging/… et pouvait masquer une
+    //    classification manquante). On conserve "general" comme type nominal
+    //    MAIS on marque taskTypeInferred=true : les garde-fous critiques sont
+    //    déjà en scope "global" (indépendants du taskType), et le flag permet
+    //    au pipeline/validateur d'adopter une posture conservative et de tracer
+    //    le fait que la tâche n'a pas été classifiée.
+    return { taskType: "general", taskTypeInferred: true };
   }
 }
