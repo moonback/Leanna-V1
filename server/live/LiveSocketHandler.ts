@@ -496,7 +496,7 @@ export function attachLiveWebSocket(
         'browser_get_element_text', 'browser_get_element_attribute',
         'browser_fill_form', 'browser_select_option',
         'reasoning_think',
-        'agent_orchestrate', 'agent_status', 'agent_create',
+        'agent_delegate', 'agent_negotiate', 'agent_orchestrate', 'agent_status', 'agent_create',
         // Missions autonomes — tâches complexes multi-étapes
         'mission_create', 'mission_status',
         'knowledge_search_entities', 'knowledge_status',
@@ -532,7 +532,7 @@ export function attachLiveWebSocket(
         'write_project_file',
         'automation_search',
         'automation_list_scheduled_tasks',
-        'agent_delegate', 'agent_orchestrate', 'agent_status', 'agent_create',
+        'agent_delegate', 'agent_negotiate', 'agent_orchestrate', 'agent_status', 'agent_create',
         'agent_list_tasks', 'agent_list_roles', 'agent_cancel', 'agent_cancel_orchestration', 'agent_stats',
         // Custom skills — accessibles en mode ask aussi
         'list_custom_skills', 'create_custom_skill', 'update_custom_skill', 'delete_custom_skill', 'toggle_custom_skill',
@@ -595,7 +595,7 @@ export function attachLiveWebSocket(
       const agentsConfig = currentProfile.agents;
       const agentsEnabled = agentsConfig?.enabled !== false;
       if (!agentsEnabled) {
-        const AGENT_TOOLS = new Set(['agent_delegate', 'agent_orchestrate', 'agent_status', 'agent_create', 'agent_list_tasks', 'agent_list_roles', 'agent_cancel', 'agent_cancel_orchestration', 'agent_stats']);
+        const AGENT_TOOLS = new Set(['agent_delegate', 'agent_negotiate', 'agent_orchestrate', 'agent_status', 'agent_create', 'agent_list_tasks', 'agent_list_roles', 'agent_cancel', 'agent_cancel_orchestration', 'agent_stats']);
         filteredDeclarations = filteredDeclarations.filter(d => !AGENT_TOOLS.has(d.name));
       }
       // Les filtres git_/reasoning_ ne doivent jamais retirer un outil MCP

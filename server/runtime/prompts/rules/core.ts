@@ -217,11 +217,13 @@ const routingRules: PromptRule[] = [
     when: ctx => ctx.agents.enabled,
     content: `Évaluer les règles de délégation dans cet ordre strict (la première applicable tranche) :
 1. Agents désactivés → agir directement dans la sandbox ; aucune délégation.
-2. Demande explicite de délégation → déléguer au rôle demandé s'il est autorisé.
+2. Demande explicite de délégation vers un rôle précis → déléguer au rôle demandé s'il est autorisé (\`agent_delegate\`).
 3. Opération de fichier sans expertise (créer dossier, déplacer/renommer, modification documentaire ponctuelle) → agir directement.
 4. Code trivial et isolé (typo, commentaire, libellé, correction locale sans changement de comportement) → agir directement, puis vérifier.
-5. Code non trivial (nouvelle fonctionnalité, bug, refactor, API, tests, sécurité, plusieurs fichiers) → déléguer au rôle spécialisé.
-6. Document complexe ou spécialisé → déléguer au rôle rédactionnel approprié.`,
+5. Code non trivial (nouvelle fonctionnalité, bug, refactor, API, tests, sécurité, plusieurs fichiers) → déléguer :
+   a. Rôle cible ÉVIDENT (un seul agent clairement le mieux placé) → \`agent_delegate\` vers ce rôle.
+   b. Rôle cible NON ÉVIDENT (tu hésites entre plusieurs agents, ou plusieurs compétences pourraient convenir) → \`agent_negotiate\` : la tâche est mise aux enchères et le meilleur-match (compétences + charge) la remporte automatiquement.
+6. Document complexe ou spécialisé → déléguer au rôle rédactionnel approprié (\`agent_delegate\`, ou \`agent_negotiate\` si le rôle n'est pas évident).`,
     source: "agents-system.md",
   },
   {

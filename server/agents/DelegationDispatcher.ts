@@ -14,15 +14,22 @@
 import { randomUUID } from "crypto";
 import type { AgentTask } from "./types.js";
 import { getAgentDefinition } from "./roles.js";
-import { DelegationParser, type ParsedDelegation } from "./DelegationParser.js";
+import { DelegationParser, type ParsedDelegation, type OpenDelegation } from "./DelegationParser.js";
 import { agentMessageBus } from "./AgentMessageBus.js";
 import type { TaskRequestPayload } from "./AgentCommunication.js";
+import { contractNetNegotiator, type ContractNetNegotiator } from "./ContractNetNegotiator.js";
+import { inferRequiredCapabilities } from "./capabilityInference.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("DelegationDispatcher");
 
 export class DelegationDispatcher {
   private delegationParser = new DelegationParser();
+  private negotiator: ContractNetNegotiator;
+
+  constructor(negotiator: ContractNetNegotiator = contractNetNegotiator) {
+    this.negotiator = negotiator;
+  }
 
   /**
    * Limite de profondeur maximale pour les délégations (évite les cascades infinies)
@@ -48,7 +55,7 @@ export class DelegationDispatcher {
     resultText: string,
     depth: number = 0
   ): Promise<string[]> {
-    const { delegations, warnings } = this.delegationParser.parse(
+    const { delegations, openDelegations, warnings } = this.delegationParser.parse(
       resultText,
       parentTask.role
     );
@@ -58,7 +65,7 @@ export class DelegationDispatcher {
       log.warn(`[DelegationParser] ${w}`);
     }
 
-    if (delegations.length === 0) return [];
+    if (delegations.length === 0 && openDelegations.length === 0) return [];
 
     const agent = getAgentDefinition(parentTask.role);
     if (!agent) {
@@ -66,30 +73,103 @@ export class DelegationDispatcher {
       return [];
     }
     log.info(
-      `🔀 [${agent.name}] ${delegations.length} délégation(s) détectée(s) à profondeur ${depth} — dispatch en cours...`
+      `🔀 [${agent.name}] ${delegations.length} délégation(s) ciblée(s) + ` +
+        `${openDelegations.length} à négocier, profondeur ${depth} — dispatch en cours...`
     );
 
     const subTaskIds: string[] = [];
     const nextDepth = depth + 1;
 
     try {
-      // Lancer toutes les délégations en parallèle (fire-and-forget)
+      // Délégations ciblées : publication directe (fire-and-forget).
       const dispatches = delegations.map((delegation: ParsedDelegation) =>
         this.sendDelegation(parentTask, delegation, nextDepth).then((taskId) => {
           if (taskId) subTaskIds.push(taskId);
         })
       );
 
-      await Promise.allSettled(dispatches);
+      // Délégations ouvertes (cible non évidente) : mise aux enchères contract-net.
+      const negotiations = openDelegations.map((open: OpenDelegation) =>
+        this.negotiateDelegation(parentTask, open).then((taskId) => {
+          if (taskId) subTaskIds.push(taskId);
+        })
+      );
+
+      await Promise.allSettled([...dispatches, ...negotiations]);
 
       log.info(
-        `[${agent.name}] ${subTaskIds.length}/${delegations.length} délégation(s) envoyée(s) sur le bus (profondeur: ${nextDepth})`
+        `[${agent.name}] ${subTaskIds.length}/${delegations.length + openDelegations.length} ` +
+          `sous-tâche(s) dispatchée(s) (profondeur: ${nextDepth})`
       );
 
       return subTaskIds;
     } finally {
       // Nettoyer la chaîne seulement une fois tous les dispatches de ce parent terminés
       this.delegationChains.delete(parentTask.id);
+    }
+  }
+
+  /**
+   * Met une délégation « ouverte » (sans cible explicite) aux enchères via le
+   * négociateur contract-net. Les capacités requises sont déduites par
+   * heuristique depuis la RAISON et les INSTRUCTIONS. Le négociateur diffuse
+   * l'appel d'offres, collecte les bids, et attribue (publie le task_request)
+   * au meilleur-match. Retourne le taskId mis aux enchères, ou null si personne
+   * n'a remporté le marché.
+   */
+  private async negotiateDelegation(
+    parentTask: AgentTask,
+    open: OpenDelegation
+  ): Promise<string | null> {
+    const taskId = randomUUID();
+    const requiredCapabilities = inferRequiredCapabilities(open.reason, open.instructions);
+
+    const description = [
+      `Sous-tâche déléguée (par appel d'offres) depuis [${parentTask.role}]`,
+      ``,
+      `Raison : ${open.reason}`,
+      ``,
+      `Contexte de la tâche parent :`,
+      `- Titre : ${parentTask.title}`,
+      `- Description : ${parentTask.description.slice(0, 300)}`,
+    ].join("\n");
+
+    log.info(
+      `📣 [${parentTask.role}] Mise aux enchères : "${open.reason.slice(0, 60)}" ` +
+        `(capacités déduites: ${requiredCapabilities.join(", ")})`
+    );
+
+    try {
+      const outcome = await this.negotiator.negotiate({
+        taskId,
+        title: `[Enchère] ${open.reason.slice(0, 80)}`,
+        description,
+        requiredCapabilities,
+        files: [
+          ...open.files,
+          ...(parentTask.result?.filesModified ?? []),
+        ].filter((v, i, arr) => arr.indexOf(v) === i),
+        instructions: open.instructions,
+        priority: open.priority,
+      });
+
+      if (!outcome.winner) {
+        log.warn(
+          `[${parentTask.role}] Enchère "${open.reason.slice(0, 40)}" sans gagnant — aucune offre éligible`
+        );
+        return null;
+      }
+
+      log.info(
+        `🏆 [${parentTask.role}] Enchère remportée par [${outcome.winner}] ` +
+          `(task: ${taskId.slice(0, 8)})`
+      );
+      return outcome.awarded ? taskId : null;
+    } catch (err) {
+      log.error(
+        `[${parentTask.role}] Échec négociation "${open.reason.slice(0, 40)}": ${(err as Error).message}`
+      );
+      return null;
     }
   }
 

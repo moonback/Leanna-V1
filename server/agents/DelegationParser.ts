@@ -41,8 +41,24 @@ export interface ParsedDelegation {
   blockIndex: number;
 }
 
+/**
+ * Délégation « ouverte » : l'agent décrit une sous-tâche (RAISON/FICHIERS)
+ * mais SANS cible résoluble (champ CIBLE absent). Au lieu d'être jetée, elle
+ * est remontée pour être mise aux enchères (contract-net) : les agents
+ * candidats enchérissent et le meilleur-match remporte la tâche.
+ */
+export interface OpenDelegation {
+  reason: string;
+  files: string[];
+  priority: TaskPriority;
+  instructions?: string;
+  blockIndex: number;
+}
+
 export interface DelegationParseResult {
   delegations: ParsedDelegation[];
+  /** Blocs sans cible résoluble, candidats à la négociation. */
+  openDelegations: OpenDelegation[];
   warnings: string[];
   /** Texte brut des blocs rejetés — pour diagnostic */
   droppedBlocks: string[];
@@ -59,6 +75,7 @@ export class DelegationParser {
    */
   parse(text: string, fromRole: AgentRole): DelegationParseResult {
     const delegations: ParsedDelegation[] = [];
+    const openDelegations: OpenDelegation[] = [];
     const warnings: string[] = [];
     const droppedBlocks: string[] = [];
 
@@ -87,6 +104,11 @@ export class DelegationParser {
 
       if (result.delegation) {
         delegations.push(result.delegation);
+      } else if (result.openDelegation) {
+        openDelegations.push(result.openDelegation);
+        log.info(
+          `[${fromRole}] Bloc #${blockIndex} sans cible → candidat à la négociation (contract-net)`
+        );
       } else {
         droppedBlocks.push(blockContent.trim().slice(0, 200));
       }
@@ -108,11 +130,12 @@ export class DelegationParser {
       }
     } else {
       log.info(
-        `[${fromRole}] ${delegations.length}/${blockIndex} délégation(s) valide(s)`
+        `[${fromRole}] ${delegations.length}/${blockIndex} délégation(s) ciblée(s), ` +
+          `${openDelegations.length} ouverte(s) à négocier`
       );
     }
 
-    return { delegations, warnings, droppedBlocks };
+    return { delegations, openDelegations, warnings, droppedBlocks };
   }
 
   // ─── Parsing d'un bloc structuré ──────────────────────────────────────────
@@ -121,14 +144,46 @@ export class DelegationParser {
     content: string,
     fromRole: AgentRole,
     blockIndex: number
-  ): { delegation?: ParsedDelegation; warning?: string } {
+  ): { delegation?: ParsedDelegation; openDelegation?: OpenDelegation; warning?: string } {
     const lines = content.split("\n").map((l) => l.trim()).filter(Boolean);
     const fields = this.extractFields(lines);
 
-    // CIBLE (obligatoire)
+    // RAISON (obligatoire dans tous les cas — c'est le cœur de la sous-tâche)
+    const reason =
+      fields["raison"] ?? fields["reason"] ?? fields["motif"] ??
+      fields["description"] ?? fields["tache"] ?? "";
+
+    // FICHIERS (optionnel)
+    const filesRaw = fields["fichiers"] ?? fields["files"] ?? fields["fichier"] ?? fields["file"] ?? "";
+    const files = filesRaw
+      ? filesRaw.split(/[,;]/).map((f) => f.trim()).filter((f) => f.length > 0 && f.length < 200)
+      : [];
+
+    // PRIORITÉ (optionnel)
+    const priorityRaw = (
+      fields["priorite"] ?? fields["priority"] ?? "medium"
+    ).toLowerCase() as TaskPriority;
+    const priority: TaskPriority = VALID_PRIORITIES.has(priorityRaw) ? priorityRaw : "medium";
+
+    // INSTRUCTIONS (optionnel)
+    const instructions =
+      fields["instructions"] ?? fields["instruction"] ??
+      fields["notes"] ?? fields["note"] ?? undefined;
+
+    // CIBLE
     const cibleRaw = fields["cible"] ?? fields["target"] ?? fields["agent"] ?? fields["destinataire"];
+
+    // ── Cas « cible non évidente » : aucun champ CIBLE ──────────────────────
+    // L'agent sait QUOI déléguer mais pas À QUI. Au lieu de jeter le bloc, on
+    // le remonte comme délégation ouverte → mise aux enchères (contract-net).
+    // RAISON reste requise : sans elle, impossible de décrire la tâche à négocier.
     if (!cibleRaw) {
-      return { warning: `Bloc #${blockIndex}: champ CIBLE manquant. Champs reçus: ${Object.keys(fields).join(", ")}` };
+      if (!reason) {
+        return { warning: `Bloc #${blockIndex}: ni CIBLE ni RAISON. Champs reçus: ${Object.keys(fields).join(", ")}` };
+      }
+      return {
+        openDelegation: { reason, files, priority, instructions: instructions || undefined, blockIndex },
+      };
     }
 
     const targetRole = this.normalizeRole(cibleRaw);
@@ -147,29 +202,9 @@ export class DelegationParser {
     }
 
     // RAISON (obligatoire)
-    const reason =
-      fields["raison"] ?? fields["reason"] ?? fields["motif"] ??
-      fields["description"] ?? fields["tache"] ?? "";
     if (!reason) {
       return { warning: `Bloc #${blockIndex}: champ RAISON manquant. Champs reçus: ${Object.keys(fields).join(", ")}` };
     }
-
-    // FICHIERS (optionnel)
-    const filesRaw = fields["fichiers"] ?? fields["files"] ?? fields["fichier"] ?? fields["file"] ?? "";
-    const files = filesRaw
-      ? filesRaw.split(/[,;]/).map((f) => f.trim()).filter((f) => f.length > 0 && f.length < 200)
-      : [];
-
-    // PRIORITÉ (optionnel)
-    const priorityRaw = (
-      fields["priorite"] ?? fields["priority"] ?? "medium"
-    ).toLowerCase() as TaskPriority;
-    const priority: TaskPriority = VALID_PRIORITIES.has(priorityRaw) ? priorityRaw : "medium";
-
-    // INSTRUCTIONS (optionnel)
-    const instructions =
-      fields["instructions"] ?? fields["instruction"] ??
-      fields["notes"] ?? fields["note"] ?? undefined;
 
     log.debug(`Délégation #${blockIndex}: [${fromRole}] → [${targetRole}] "${reason.slice(0, 60)}"`);
 
