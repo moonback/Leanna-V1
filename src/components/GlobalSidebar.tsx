@@ -377,21 +377,28 @@ function IdeAssistantBlock({
   }
 
   return (
-    <div className="mx-2 mb-2 rounded-md p-1.5" style={{ backgroundColor: 'var(--bg-panel)', border: '1px solid var(--border-base)' }}>
-      <div className="mb-1.5 flex items-center gap-1.5 px-1">
-        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: dotColor }} aria-hidden />
-        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Assistant {working ? 'actif' : muted ? 'muet' : 'connecté'}</span>
+    <div className="mx-2 mb-2 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-base)] shadow-sm overflow-hidden">
+      <div className="px-3 py-2 flex items-center justify-between border-b border-[var(--border-base)] bg-[var(--bg-panel)]/50">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2 items-center justify-center">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: dotColor }} />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ backgroundColor: dotColor }} />
+          </span>
+          <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: 'var(--text-primary)' }}>
+            {working ? 'En cours' : muted ? 'En pause' : 'Connecté'}
+          </span>
+        </div>
         <button
           type="button"
           onClick={onToggleMode}
           title={sessionMode === 'full' ? 'Mode : Complet' : 'Mode : Question'}
-          className="ml-auto rounded px-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
-          style={{ color: 'var(--text-dimmed)' }}
+          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase transition-colors hover:bg-[var(--bg-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-primary)]"
+          style={{ color: 'var(--text-dimmed)', border: '1px solid var(--border-base)' }}
         >
           {sessionMode === 'full' ? 'Full' : 'Ask'}
         </button>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="p-2 grid grid-cols-4 gap-1">
         <Ctrl icon={MessageCircle} label="Chat IA" onClick={onToggleChat} active={working} tone="var(--accent-primary)" />
         <Ctrl icon={muted ? MicOff : Mic} label={muted ? 'Réactiver le micro' : 'Couper le micro'} onClick={onMuteToggle} tone={muted ? 'var(--color-warning)' : undefined} />
         <Ctrl icon={Sparkles} label={sessionMode === 'full' ? 'Mode Complet' : 'Mode Question'} onClick={onToggleMode} />
@@ -399,6 +406,7 @@ function IdeAssistantBlock({
       </div>
     </div>
   );
+
 }
 
 function NavButton({ item, active, collapsed, onClick, disabled = false }: { item: NavItem; active: boolean; collapsed: boolean; onClick: () => void; disabled?: boolean }) {
