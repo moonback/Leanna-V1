@@ -11,12 +11,12 @@
 
 | Question / commande à poser | Résultat attendu | Statut |
 |---|---|---|
-| Bonjour Leanna, présente-toi en une phrase. | Présentation courte et cohérente de l'assistant | ⬜ |
-| Quel modèle utilises-tu actuellement ? | Nom du modèle actif affiché | ⬜ |
-| Change de modèle pour un modèle plus rapide. | Confirmation du changement de modèle | ⬜ |
-| Combien de tokens cette conversation a-t-elle consommés ? | Compteur de tokens affiché | ⬜ |
-| Active le mode raisonnement et explique une closure JS. | Mode raisonnement activé + explication correcte | ⬜ |
-| Résume notre conversation jusqu'ici. | Résumé fidèle des échanges | ⬜ |
+| Bonjour Leanna, présente-toi en une phrase. | Présentation courte et cohérente de l'assistant | ✅ |
+| Quel modèle utilises-tu actuellement ? | Nom du modèle actif affiché | ❌ |
+| Change de modèle pour un modèle plus rapide. | Confirmation du changement de modèle | ❌ |
+| Combien de tokens cette conversation a-t-elle consommés ? | Compteur de tokens affiché | ❌ |
+| Active le mode raisonnement et explique une closure JS. | Mode raisonnement activé + explication correcte | ⚠️ |
+| Résume notre conversation jusqu'ici. | Résumé fidèle des échanges | ✅ |
 
 ---
 
@@ -24,9 +24,9 @@
 
 | Question / commande à poser | Résultat attendu | Statut |
 |---|---|---|
-| Crée une mission : « Ajouter un fichier LICENSE au projet ». | Mission créée avec un id | ⬜ |
-| Liste toutes mes missions actives et terminées. | Liste des missions avec statut | ⬜ |
-| Montre l'estimation (coût, durée, risque) avant exécution. | Bannière coût $ / durée / niveau de risque + confiance | ⬜ |
+| Crée une mission : « Ajouter un fichier LICENSE au projet ». | Mission créée avec un id | ✅ |
+| Liste toutes mes missions actives et terminées. | Liste des missions avec statut | ❌ |
+| Montre l'estimation (coût, durée, risque) avant exécution. | Bannière coût $ / durée / niveau de risque + confiance | ❌ |
 | Mets la mission en cours en pause. | Statut `paused` | ⬜ |
 | Reprends la mission en pause. | Statut `in_progress` | ⬜ |
 | Annule la mission en cours. | Statut `cancelled` | ⬜ |
