@@ -4,9 +4,10 @@ import React, {
 import {
   FolderOpen, KeyRound, AlertCircle, BookOpen,
   Sparkles, RotateCcw, Trash2, Loader2, Play, GitBranch, ArrowRight,
-  Bot, Target, Globe,
+  Bot, Target, Globe, X,
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { FileIcon } from './FileIcon.js';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState.js';
 import { useLiveAPIContext } from '../../context/LiveAPIContext.js';
 import { useProfile } from '../../context/UserProfileContext.js';
@@ -21,9 +22,14 @@ import { SystemModal } from './SystemModal.js';
 
 // ─── Constantes ──────────────────────────────────────────────────────────
 
-const MOD = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-  ? '⌘'
-  : 'Ctrl';
+function detectMac(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform || nav.platform || nav.userAgent || '';
+  return /Mac|iPod|iPhone|iPad/.test(platform);
+}
+
+const MOD = detectMac() ? '⌘' : 'Ctrl';
 
 const SPRING = { type: 'spring' as const, bounce: 0, duration: 0.4 };
 
@@ -55,6 +61,60 @@ function useGitInfo() {
   }, []);
 
   return gitInfo;
+}
+
+// ─── Hook : fichiers récents (localStorage) ──────────────────────────────
+
+const RECENT_FILES_KEY = 'Leanna_recent_files';
+
+interface RecentFile { path: string; language?: string; openedAt: number }
+
+function readRecentFiles(): RecentFile[] {
+  try {
+    const raw = localStorage.getItem(RECENT_FILES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((r): r is RecentFile => !!r && typeof r.path === 'string')
+      .sort((a, b) => (b.openedAt ?? 0) - (a.openedAt ?? 0));
+  } catch {
+    return [];
+  }
+}
+
+function useRecentFiles() {
+  const [files, setFiles] = useState<RecentFile[]>(() => (
+    typeof window !== 'undefined' ? readRecentFiles() : []
+  ));
+
+  useEffect(() => {
+    const refresh = () => setFiles(readRecentFiles());
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key || e.key === RECENT_FILES_KEY) refresh();
+    };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
+
+  const remove = useCallback((path: string) => {
+    setFiles((prev) => {
+      const next = prev.filter((r) => r.path !== path);
+      try { localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  const clear = useCallback(() => {
+    setFiles([]);
+    try { localStorage.removeItem(RECENT_FILES_KEY); } catch { /* ignore */ }
+  }, []);
+
+  return { files, remove, clear };
 }
 
 // ─── Hook : statut de la clé Gemini ──────────────────────────────────────
@@ -129,6 +189,19 @@ function GlobalStyles() {
       .ee-focus { outline: none; }
       .ee-focus:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
+      /* Grain : bruit SVG très léger, mélangé pour casser les dégradés plats */
+      .ee-grain {
+        z-index: 0;
+        opacity: 0.07;
+        mix-blend-mode: soft-light;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        background-size: 140px 140px;
+      }
+      /* Repli pour thèmes où soft-light ne rend presque rien */
+      @supports not (mix-blend-mode: soft-light) {
+        .ee-grain { mix-blend-mode: normal; opacity: 0.04; }
+      }
+
       .ee-glass {
         position: relative;
         overflow: hidden;
@@ -155,6 +228,22 @@ function GlobalStyles() {
         border-color: color-mix(in srgb, var(--primary) 32%, var(--border));
         background-image: linear-gradient(135deg,
           color-mix(in srgb, var(--primary) 10%, transparent) 0%, transparent 60%);
+      }
+
+      /* Hero card : pleine largeur, accent primaire présent, icône plus grande */
+      .ee-card-hero {
+        border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+        background-image:
+          radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--primary) 16%, transparent) 0%, transparent 55%),
+          linear-gradient(135deg, color-mix(in srgb, var(--primary) 8%, transparent) 0%, transparent 70%);
+      }
+      .ee-card-hero:hover:not(:disabled) {
+        border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+        box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 16%, transparent),
+                    0 14px 40px color-mix(in srgb, var(--primary) 22%, transparent);
+      }
+      .ee-card-hero .ee-card-icon {
+        width: 48px; height: 48px; border-radius: 14px;
       }
 
       /* Cartes d'action rapide : accent coloré par carte */
@@ -213,6 +302,23 @@ function GlobalStyles() {
         .ee-card:hover:not(:disabled) .ee-card-arrow { transform: none; }
       }
 
+      /* Fichiers récents : bouton de suppression révélé au survol */
+      .ee-recent-remove {
+        opacity: 0;
+        background-color: color-mix(in srgb, var(--surface-soft) 70%, transparent);
+        transition: opacity 150ms ease-out, color 150ms ease-out, background-color 150ms ease-out;
+      }
+      .ee-recent:hover .ee-recent-remove,
+      .ee-recent-remove:focus-visible {
+        opacity: 1;
+      }
+      .ee-recent-remove:hover {
+        color: var(--color-error);
+        background-color: color-mix(in srgb, var(--color-error) 14%, transparent);
+      }
+      /* Laisse la place au bouton de suppression dans la carte récente */
+      .ee-recent:hover .ee-card { padding-right: 1.75rem; }
+
       .ee-chip {
         display: inline-flex; align-items: center; gap: 6px;
         padding: 4px 10px; border-radius: 999px;
@@ -243,6 +349,20 @@ function GlobalStyles() {
 
       @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
         .ee-glass { background-color: var(--surface); }
+      }
+
+      /* Prénom mis en valeur par un dégradé de texte */
+      .ee-name-accent {
+        background-image: linear-gradient(100deg,
+          var(--primary) 0%,
+          color-mix(in srgb, var(--primary) 60%, #fff) 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        color: transparent;
+      }
+      @supports not ((background-clip: text) or (-webkit-background-clip: text)) {
+        .ee-name-accent { color: var(--primary); }
       }
 
       .ee-dot-live { animation: ee-pulse 2s ease-in-out infinite; }
@@ -276,7 +396,7 @@ const Kbd = React.memo(function Kbd({
 
 const ActionCard = React.memo(function ActionCard({
   icon: Icon, title, description, shortcut, onClick, disabled = false, reduceMotion = false,
-  accent = 'var(--primary)', comingSoon = false, primary = false,
+  accent = 'var(--primary)', comingSoon = false, primary = false, hero = false,
 }: {
   icon: IconType;
   title: string;
@@ -288,6 +408,7 @@ const ActionCard = React.memo(function ActionCard({
   accent?: string;
   comingSoon?: boolean;
   primary?: boolean;
+  hero?: boolean;
 }) {
   const descId = useId();
   return (
@@ -296,24 +417,24 @@ const ActionCard = React.memo(function ActionCard({
       onClick={onClick}
       disabled={disabled}
       aria-describedby={descId}
-      className={`ee-card ee-focus group flex items-start gap-3 p-4 text-left rounded-xl disabled:opacity-45 disabled:cursor-not-allowed${primary ? ' ee-card-primary' : ''}`}
+      className={`ee-card ee-focus group flex items-start text-left rounded-xl disabled:opacity-45 disabled:cursor-not-allowed${primary ? ' ee-card-primary' : ''}${hero ? ' ee-card-hero gap-4 p-5' : ' gap-3 p-4'}`}
       style={{ ['--card-accent' as string]: accent }}
       whileHover={reduceMotion || disabled ? undefined : { y: -2 }}
       whileTap={reduceMotion || disabled ? undefined : { scale: 0.98 }}
       transition={{ duration: 0.15 }}
     >
       <span
-        className="ee-card-icon w-9 h-9 flex items-center justify-center rounded-lg flex-shrink-0"
+        className={`ee-card-icon flex items-center justify-center rounded-lg flex-shrink-0${hero ? '' : ' w-9 h-9'}`}
         style={{
           backgroundColor: 'color-mix(in srgb, var(--card-accent) 12%, transparent)',
           border: '1px solid color-mix(in srgb, var(--card-accent) 22%, transparent)',
         }}
       >
-        <Icon size={16} style={{ color: 'var(--card-accent)' }} />
+        <Icon size={hero ? 22 : 16} style={{ color: 'var(--card-accent)' }} />
       </span>
       <span className="flex-1 min-w-0">
         <span className="flex items-center gap-2">
-          <span className="block text-sm font-semibold leading-tight" style={{ color: 'var(--text)' }}>
+          <span className={`block font-semibold leading-tight ${hero ? 'text-base' : 'text-sm'}`} style={{ color: 'var(--text)' }}>
             {title}
           </span>
           {comingSoon && (
@@ -506,11 +627,102 @@ const InterruptedMissionsSection = React.memo(function InterruptedMissionsSectio
   );
 });
 
+// ─── Fichiers récents ────────────────────────────────────────────────────
+
+function basename(p: string): string {
+  return p.split(/[/\\]/).pop() || p;
+}
+
+function dirname(p: string): string {
+  const parts = p.split(/[/\\]/);
+  parts.pop();
+  return parts.join('/');
+}
+
+const RecentFilesSection = React.memo(function RecentFilesSection({
+  onOpenFile, reduceMotion = false,
+}: { onOpenFile: (path: string) => void; reduceMotion?: boolean }) {
+  const { files, remove, clear } = useRecentFiles();
+  const visible = useMemo(() => files.slice(0, 6), [files]);
+
+  if (visible.length === 0) return null;
+
+  return (
+    <section className="mb-6" aria-label="Fichiers récents">
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+            Récents
+          </h2>
+          <span
+            className="inline-flex items-center justify-center h-[16px] min-w-[16px] px-1 rounded-full text-[10px] font-semibold"
+            style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 18%, transparent)', color: 'var(--primary)' }}
+          >
+            {files.length}
+          </span>
+        </div>
+        <button type="button" onClick={clear} className="ee-link ee-focus text-xs">
+          Tout effacer
+        </button>
+      </div>
+      <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 p-0 m-0 list-none">
+        <AnimatePresence initial={false}>
+          {visible.map((f) => {
+            const name = basename(f.path);
+            const dir = dirname(f.path);
+            return (
+              <motion.li
+                key={f.path}
+                layout={!reduceMotion}
+                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, height: 0, marginTop: 0 }}
+                transition={{ duration: reduceMotion ? 0.15 : 0.2 }}
+                className="ee-recent group relative"
+              >
+                <button
+                  type="button"
+                  onClick={() => onOpenFile(f.path)}
+                  className="ee-card ee-focus flex items-center gap-2 w-full py-1.5 px-2.5 text-left rounded-lg"
+                  style={{ ['--card-accent' as string]: 'var(--primary)' }}
+                  title={f.path}
+                >
+                  <span className="flex items-center justify-center flex-shrink-0">
+                    <FileIcon filePath={f.path} size={14} />
+                  </span>
+                  <span className="text-[13px] font-medium leading-tight truncate" style={{ color: 'var(--text)' }}>
+                    {name}
+                  </span>
+                  {dir && (
+                    <span className="hidden lg:block text-[11px] leading-tight truncate ml-auto font-mono" style={{ color: 'var(--text-muted)' }}>
+                      {dir}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => remove(f.path)}
+                  aria-label={`Retirer ${name} des récents`}
+                  className="ee-recent-remove ee-focus absolute top-1/2 right-1.5 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <X size={12} />
+                </button>
+              </motion.li>
+            );
+          })}
+        </AnimatePresence>
+      </ul>
+    </section>
+  );
+});
+
 // ─── Composant principal ─────────────────────────────────────────────────
 
 interface EmptyEditorStateProps {
   onOpenFile: (path: string) => void;
   onCreateFile: () => void;
+  /** Réservé : conservé dans le contrat pour l'appelant, non utilisé par cet écran. */
   onCreateFolder: () => void;
   onShowSettings: (section?: string) => void;
   onOpenSearch?: () => void;
@@ -519,9 +731,8 @@ interface EmptyEditorStateProps {
 }
 
 export const EmptyEditorState = React.memo(function EmptyEditorState({
-  onOpenFile: _onOpenFile,
+  onOpenFile,
   onCreateFile,
-  onCreateFolder: _onCreateFolder,
   onShowSettings,
   onOpenSearch,
   onOpenChat,
@@ -614,11 +825,21 @@ export const EmptyEditorState = React.memo(function EmptyEditorState({
     <div className="flex flex-1 flex-col overflow-y-auto relative" style={{ backgroundColor: 'var(--bg)' }}>
       <GlobalStyles />
 
-      {/* Fond statique : léger halo en haut */}
+      {/* Fond statique : halo primaire en haut */}
       <div
         className="absolute inset-0 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse 90% 60% at 50% 0%, var(--primary) 0%, transparent 60%)', opacity: 0.06 }}
+        style={{ background: 'radial-gradient(ellipse 80% 55% at 50% -5%, var(--primary) 0%, transparent 55%)', opacity: 0.16 }}
       />
+      {/* Second halo asymétrique en bas-droite, accent froid */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: 'radial-gradient(ellipse 60% 50% at 105% 105%, #60a5fa 0%, transparent 55%)',
+          opacity: 0.14,
+        }}
+      />
+      {/* Grain subtil pour casser l'aspect plat des dégradés */}
+      <div className="ee-grain absolute inset-0 pointer-events-none" aria-hidden="true" />
 
       <div className="relative z-10 flex-1 flex flex-col items-center px-4 sm:px-6 py-10 sm:py-14">
         <main className="w-full max-w-[880px] my-auto">
@@ -633,7 +854,7 @@ export const EmptyEditorState = React.memo(function EmptyEditorState({
                 className="text-3xl sm:text-5xl font-semibold tracking-[-0.02em] leading-tight mt-1"
                 style={{ color: 'var(--text)' }}
               >
-                {greeting}, {userName}
+                {greeting}, <span className="ee-name-accent">{userName}</span>
               </h1>
               <p className="text-base sm:text-lg mt-2" style={{ color: 'var(--text-secondary)' }}>
                 Que souhaitez-vous faire aujourd'hui ?
@@ -698,7 +919,7 @@ export const EmptyEditorState = React.memo(function EmptyEditorState({
           {/* ── Actions rapides ── */}
           <motion.section
             aria-label="Actions rapides"
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+            className="flex flex-col gap-3"
             {...enter(0.12)}
           >
             <ActionCard
@@ -706,34 +927,42 @@ export const EmptyEditorState = React.memo(function EmptyEditorState({
               title={connected ? `Reprendre avec ${aiName}` : `Démarrer ${aiName}`}
               description={connected
                 ? 'Session en cours : revenez à la conversation.'
-                : 'Parlez, écrivez ou confiez une tâche.'}
+                : 'Parlez, écrivez ou confiez une tâche à votre assistant.'}
               shortcut={`${MOD}+L`}
               onClick={handleConnect}
               reduceMotion={reduceMotion}
               accent="var(--primary)"
               primary
+              hero
             />
-            <ActionCard
-              icon={Bot} title="Agents" description="Flotte et activité"
-              onClick={handleOpenAgents} reduceMotion={reduceMotion}
-              accent="#60a5fa"
-            />
-            <ActionCard
-              icon={Target} title="Missions" description="Suivi et reprises"
-              onClick={handleOpenMissions} reduceMotion={reduceMotion}
-              accent="#f472b6"
-            />
-            <ActionCard
-              icon={BookOpen} title="Notebooks" description="Sources et résumés"
-              onClick={onOpenNotebooks} disabled={!onOpenNotebooks} reduceMotion={reduceMotion}
-              accent="#6ee7b7" comingSoon={!onOpenNotebooks}
-            />
-            <ActionCard
-              icon={Globe} title="Navigateur" description="Ouvrir le navigateur intégré"
-              onClick={handleOpenBrowser} reduceMotion={reduceMotion}
-              accent="#a78bfa"
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <ActionCard
+                icon={Bot} title="Agents" description="Flotte et activité"
+                onClick={handleOpenAgents} reduceMotion={reduceMotion}
+                accent="#60a5fa"
+              />
+              <ActionCard
+                icon={Target} title="Missions" description="Suivi et reprises"
+                onClick={handleOpenMissions} reduceMotion={reduceMotion}
+                accent="#f472b6"
+              />
+              <ActionCard
+                icon={BookOpen} title="Notebooks" description="Sources et résumés"
+                onClick={onOpenNotebooks} disabled={!onOpenNotebooks} reduceMotion={reduceMotion}
+                accent="#6ee7b7" comingSoon={!onOpenNotebooks}
+              />
+              <ActionCard
+                icon={Globe} title="Navigateur" description="Navigateur intégré"
+                onClick={handleOpenBrowser} reduceMotion={reduceMotion}
+                accent="#a78bfa"
+              />
+            </div>
           </motion.section>
+
+          {/* ── Fichiers récents ── */}
+          <motion.div {...enter(0.18)} className="mt-6">
+            <RecentFilesSection onOpenFile={onOpenFile} reduceMotion={reduceMotion} />
+          </motion.div>
 
           {/* ── Pied de page ── */}
           <motion.footer
