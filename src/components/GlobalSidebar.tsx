@@ -300,7 +300,7 @@ export function GlobalSidebar(props: GlobalSidebarProps = {}) {
       </div>
 
       {/* Footer — settings */}
-      <div className="border-t mt-auto px-3 py-3" style={{ borderColor: 'var(--border-base)' }}>
+      <div className="border-t mt-auto px-2 py-0" style={{ borderColor: 'var(--border-base)' }}>
         <div className="flex items-center gap-1">
           <div className="flex-1">
             <NavButton
