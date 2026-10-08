@@ -10,6 +10,7 @@ import type {  PlannedAction,  ReflectionResult,
   MissionPlan,
   MissionState,
   Goal,
+  GoalStatus,
 } from "./types.js";
 import { DEFAULT_MISSION_CONFIG } from "./types.js";
 import { telemetryService } from "../observability/TelemetryService.js";
@@ -357,6 +358,24 @@ export class Executor {
     this.missionRuns.set(mission.id, run);
     void run.finally(() => this.missionRuns.delete(mission.id));
 
+    // Watchdog : arrêt forcé si la mission dépasse le timeout global configuré.
+    const timeoutMs = missionConfig.missionTimeoutMs;
+    if (timeoutMs > 0) {
+      const watchdog = setTimeout(() => {
+        if (!mission.isCompleted() && this.activeMissions.has(mission.id)) {
+          console.warn(`[Executor] ⏱️ Timeout global de mission atteint (${timeoutMs}ms). Arrêt.`);
+          mission.completeActiveGoal({ success: false, summary: "Timeout global de mission." });
+          this.finalizeMission(mission);
+          telemetryService.endMissionTrace(mission.id, false);
+          telemetryService.clearMissionBudget(mission.id);
+          this.emit("mission_timeout", { missionId: mission.id });
+        }
+      }, timeoutMs);
+      // Ne pas garder le process Node en vie uniquement pour ce timer.
+      if (typeof watchdog.unref === "function") watchdog.unref();
+      void run.finally(() => clearTimeout(watchdog));
+    }
+
     return mission;
   }
 
@@ -581,16 +600,23 @@ export class Executor {
       await this.executeGoalsScheduled(mission, subGoalIds, availableSkills);
     }
 
-    // Compléter la mission si pas déjà fait
+    // Compléter la mission si pas déjà fait.
     if (!mission.isCompleted()) {
       const allGoals = Object.values(mission.getState().goals);
-      const allSuccess = allGoals
-        .filter((g) => g.parentId !== null)
-        .every((g) => g.status === "completed");
+      const subGoals = allGoals.filter((g) => g.parentId !== null);
+      const isTerminal = (s: GoalStatus) =>
+        s === "completed" || s === "failed" || s === "cancelled";
+      const allTerminal = subGoals.every((g) => isTerminal(g.status));
+      const allCompleted = subGoals.length > 0 && subGoals.every((g) => g.status === "completed");
+      const anyCriticalFailed = subGoals.some(
+        (g) => (g.status === "failed" || g.status === "blocked") && g.priority === "critical"
+      );
+      // Succès si tout est complété, ou si tout est terminal sans échec critique.
+      const success = allCompleted || (allTerminal && !anyCriticalFailed);
 
       mission.completeActiveGoal({
-        success: allSuccess,
-        summary: allSuccess
+        success,
+        summary: success
           ? `Mission "${mission.getState().title}" complétée avec succès.`
           : `Mission terminée avec des objectifs échoués.`,
         lessonsLearned: this.extractLessons(mission),
@@ -861,6 +887,37 @@ export class Executor {
   }
 
   /**
+   * Détecte les cycles dans le graphe de dépendances `dependsOn` restreint à
+   * `goalIds`. Retourne l'ensemble des objectifs impliqués dans au moins un
+   * cycle. Parcours DFS avec coloriage (0=non vu, 1=en cours, 2=terminé).
+   */
+  private detectDependencyCycles(mission: Mission, goalIds: string[]): Set<string> {
+    const inCycle = new Set<string>();
+    const state = new Map<string, 0 | 1 | 2>();
+
+    const visit = (id: string, path: string[]): void => {
+      const s = state.get(id) ?? 0;
+      if (s === 2) return;
+      if (s === 1) {
+        const idx = path.indexOf(id);
+        if (idx >= 0) for (const pid of path.slice(idx)) inCycle.add(pid);
+        return;
+      }
+      state.set(id, 1);
+      path.push(id);
+      const goal = mission.getGoal(id);
+      for (const dep of goal?.dependsOn ?? []) {
+        if (goalIds.includes(dep)) visit(dep, path);
+      }
+      path.pop();
+      state.set(id, 2);
+    };
+
+    for (const id of goalIds) visit(id, []);
+    return inCycle;
+  }
+
+  /**
    * Ordonnance les sous-objectifs par vagues selon leurs dépendances.
    * Chaque vague exécute EN PARALLÈLE tous les objectifs dont les dépendances
    * (dependsOn) sont déjà complétées. S'arrête si un objectif critique échoue.
@@ -879,6 +936,23 @@ export class Executor {
       })
     );
     let criticalFailure = false;
+
+    // Détection proactive des cycles de dépendances `dependsOn`. Sans ça, des
+    // objectifs mutuellement dépendants ne deviennent jamais exécutables et la
+    // boucle se termine en les marquant tous bloqués sans raison précise.
+    const cycles = this.detectDependencyCycles(mission, [...remaining]);
+    if (cycles.size > 0) {
+      console.warn(`[Executor] ⚠️ Cycle(s) de dépendances détecté(s): ${[...cycles].join(", ")}`);
+      for (const id of cycles) {
+        mission.blockGoal(id, "Dépendance circulaire détectée.");
+        remaining.delete(id);
+        this.emit("goal_blocked", {
+          missionId: mission.id,
+          goalId: id,
+          reason: "Dépendance circulaire détectée.",
+        });
+      }
+    }
 
     const isDone = (id: string): boolean => {
       const g = mission.getGoal(id);
@@ -1046,6 +1120,31 @@ export class Executor {
         });
         return this.createDefaultReflection(action.id, false);
       }
+
+      // Validation structurelle des arguments produits par le LLM contre le
+      // schéma de l'outil. Évite d'exécuter un skill avec un JSON invalide
+      // (champ requis manquant, type incorrect, champ inconnu) qui échouerait
+      // côté handler après avoir déjà consommé des tokens.
+      if (action.args && Object.keys(action.args).length > 0) {
+        const check = this.validateArgs(action.skillName, action.args);
+        if (!check.valid) {
+          const reason = `Arguments invalides pour ${action.skillName}: ${check.errors.join(" ; ")}`;
+          console.log(`[Executor]    ✗ ${reason}`);
+          mission.recordActionResult(action.id, { error: reason }, false);
+          this.scorer.recordUsage(action.skillName, false, Date.now() - startTime);
+          try { strategyMemory.recordSkillOutcome(action.skillName, false, Date.now() - startTime); } catch { /* best-effort */ }
+          this.emit("action_completed", {
+            missionId: mission.id,
+            goalId,
+            actionId: action.id,
+            skill: action.skillName,
+            success: false,
+            error: reason,
+            durationMs: Date.now() - startTime,
+          });
+          return this.createDefaultReflection(action.id, false);
+        }
+      }
     }
 
     // Curseur d'autonomie : décider si l'action peut s'exécuter, doit être
@@ -1176,6 +1275,55 @@ export class Executor {
     const params = schema?.parameters as any;
     if (!params || typeof params !== "object") return false;
     return Array.isArray(params.required) && params.required.length > 0;
+  }
+
+  /**
+   * Valide les arguments produits par le LLM contre le schéma JSON de l'outil :
+   * champs requis présents, pas de champ inconnu, types cohérents. Retourne la
+   * liste des erreurs (vide = valide). Sans schéma/propriétés, on considère valide.
+   */
+  private validateArgs(
+    skillName: string,
+    args: Record<string, unknown>
+  ): { valid: boolean; errors: string[] } {
+    const schema = this.toolSchemas.get(skillName);
+    const params = schema?.parameters as
+      | { type?: string; properties?: Record<string, { type?: string }>; required?: string[] }
+      | undefined;
+    if (!params?.properties) return { valid: true, errors: [] };
+
+    const errors: string[] = [];
+    const required = Array.isArray(params.required) ? params.required : [];
+    for (const req of required) {
+      if (args[req] === undefined || args[req] === null || args[req] === "") {
+        errors.push(`Champ requis manquant: "${req}"`);
+      }
+    }
+    for (const [key, value] of Object.entries(args)) {
+      if (!(key in params.properties)) {
+        errors.push(`Champ inconnu: "${key}"`);
+        continue;
+      }
+      const expected = params.properties[key]?.type;
+      if (expected && !this.matchesJsonType(value, expected)) {
+        errors.push(`Type invalide pour "${key}": attendu ${expected}, reçu ${typeof value}`);
+      }
+    }
+    return { valid: errors.length === 0, errors };
+  }
+
+  /** Vérifie qu'une valeur correspond à un type JSON Schema élémentaire. */
+  private matchesJsonType(value: unknown, expected: string): boolean {
+    switch (expected) {
+      case "string":  return typeof value === "string";
+      case "number":  return typeof value === "number" && Number.isFinite(value);
+      case "integer": return Number.isInteger(value as number);
+      case "boolean": return typeof value === "boolean";
+      case "array":   return Array.isArray(value);
+      case "object":  return typeof value === "object" && value !== null && !Array.isArray(value);
+      case "null":    return value === null;
+      default:        return true;
+    }
   }
 
   /**
@@ -1400,6 +1548,14 @@ JSON:`;
       }
     }
 
+    // 4. Codes d'échec process (exitCode non nul, status HTTP >= 400).
+    if (typeof r.exitCode === "number" && r.exitCode !== 0) {
+      return `Le skill a terminé avec exitCode=${r.exitCode}.`;
+    }
+    if (typeof r.statusCode === "number" && r.statusCode >= 400) {
+      return `Le skill a renvoyé un statut HTTP ${r.statusCode}.`;
+    }
+
     return null;
   }
 
@@ -1511,14 +1667,32 @@ JSON:`;
     }
 
     // 2e passe : résoudre les dépendances (exprimées par titre) en IDs de goals.
+    // Les dépendances non résolues (titre inconnu) sont signalées explicitement
+    // au lieu d'être silencieusement supprimées.
     plans.forEach((plan, index) => {
       const deps = plan.dependsOn ?? [];
       if (deps.length === 0) return;
       const goal = mission.getGoal(ids[index]);
       if (!goal) return;
-      goal.dependsOn = deps
-        .map((d) => titleToId.get(String(d).trim().toLowerCase()))
-        .filter((id): id is string => !!id && id !== ids[index]);
+
+      const resolved: string[] = [];
+      const unresolved: string[] = [];
+      for (const d of deps) {
+        const id = titleToId.get(String(d).trim().toLowerCase());
+        if (id && id !== ids[index]) resolved.push(id);
+        else if (!id) unresolved.push(String(d));
+      }
+      goal.dependsOn = resolved;
+      if (unresolved.length > 0) {
+        console.warn(
+          `[Executor] ⚠️ Dépendances non résolues pour "${plan.title}": ${unresolved.join(", ")}`
+        );
+        this.emit("goal_unresolved_deps", {
+          missionId: mission.id,
+          goalId: ids[index],
+          unresolved,
+        });
+      }
     });
 
     return ids;

@@ -268,13 +268,9 @@ export class PlanEstimator {
   private computeConfidence(actions: PlannedAction[], rawRiskScore: number): number {
     if (actions.length === 0) return 0.4;
 
-    const withHistory = actions.filter(a => {
-      // On expose indirectement l'existence d'historique via la durée estimée :
-      // si getEstimatedDurationMs retourne une valeur qui n'est pas un multiple
-      // exact d'une constante par catégorie, c'est qu'il y a de l'historique.
-      // Plus simplement : on utilise le score de l'action comme proxy.
-      return a.score > 30; // score > neutre → scorer a des données
-    }).length;
+    // Couverture réelle : proportion d'actions dont le skill possède un
+    // historique d'usage observé (données fiables plutôt qu'un proxy de score).
+    const withHistory = actions.filter((a) => this.scorer.hasUsageHistory(a.skillName)).length;
 
     const dataCoverage = withHistory / actions.length;
 

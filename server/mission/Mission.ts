@@ -154,7 +154,10 @@ export class Mission {
       throw new Error(`Max sub-goals (${this.config.maxSubGoals}) reached for "${parent.title}"`);
     }
 
-    if (this.state.goalStack.length >= this.config.maxDepth) {
+    // Profondeur structurelle réelle (≠ longueur de la goalStack qui est
+    // un chemin d'exécution et peut être tronquée/remise à zéro).
+    const parentDepth = this.computeDepth(params.parentId);
+    if (parentDepth + 1 > this.config.maxDepth) {
       throw new Error(`Max goal depth (${this.config.maxDepth}) reached`);
     }
 
@@ -309,6 +312,10 @@ export class Mission {
     const action = this.findAction(actionId);
     if (!action) throw new Error(`Action ${actionId} not found`);
 
+    // Détecte une ré-exécution : l'action était "in_progress" et possédait
+    // déjà un résultat d'une passe précédente.
+    const wasRetry = action.status === "in_progress" && action.result !== undefined;
+
     action.status = success ? "completed" : "failed";
     action.result = result;
 
@@ -316,6 +323,9 @@ export class Mission {
       this.state.metrics.successfulActions++;
     } else {
       this.state.metrics.failedActions++;
+    }
+    if (wasRetry) {
+      this.state.metrics.retriedActions++;
     }
 
     this.state.updatedAt = new Date().toISOString();
@@ -376,7 +386,33 @@ export class Mission {
 
   static fromJSON(data: MissionState, config?: Partial<MissionConfig>): Mission {
     const mission = Object.create(Mission.prototype) as Mission;
-    mission.state = structuredClone(data);
+    const sanitized = structuredClone(data);
+
+    // ── Sanitization pour reprise après crash ──────────────────────────────
+    // Une action "in_progress" signifie que le process a été interrompu pendant
+    // son exécution : on la remet en "pending" pour qu'elle soit rejouée.
+    // Sans ça, la boucle de l'Executor la saute (elle ne cherche que "pending")
+    // et l'objectif ne peut plus jamais atteindre son état terminal.
+    for (const goal of Object.values(sanitized.goals)) {
+      for (const action of goal.plannedActions) {
+        if (action.status === "in_progress") {
+          action.status = "pending";
+          action.result = undefined;
+          action.reflection = undefined;
+        }
+      }
+      if (goal.status === "in_progress") {
+        // On garde "in_progress" pour que l'Executor reprenne ce goal,
+        // mais on nettoie le timestamp de complétion pour ne pas fausser les métriques.
+        goal.completedAt = undefined;
+      }
+    }
+    // Idem pour la mission elle-même.
+    if (sanitized.status === "in_progress") {
+      sanitized.completedAt = undefined;
+    }
+
+    mission.state = sanitized;
     mission.config = { ...DEFAULT_MISSION_CONFIG, ...config };
     return mission;
   }
@@ -419,6 +455,23 @@ export class Mission {
   }
 
   // ─── Private ──────────────────────────────────────────────────────────────
+
+  /**
+   * Profondeur structurelle d'un objectif dans l'arbre (racine = 1),
+   * calculée en remontant la chaîne des parentId.
+   */
+  private computeDepth(goalId: string): number {
+    let depth = 0;
+    let current: string | null = goalId;
+    const seen = new Set<string>();
+    while (current) {
+      if (seen.has(current)) break; // garde-fou anti-cycle
+      seen.add(current);
+      depth++;
+      current = this.state.goals[current]?.parentId ?? null;
+    }
+    return depth;
+  }
 
   private findAction(actionId: string): PlannedAction | undefined {
     for (const goal of Object.values(this.state.goals)) {

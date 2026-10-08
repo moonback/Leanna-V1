@@ -143,6 +143,12 @@ export class SkillScorer {
     }
   }
 
+  /** Vrai si le scorer possède un historique d'usage réel pour ce skill. */
+  hasUsageHistory(skillName: string): boolean {
+    const stats = this.usageHistory.get(skillName);
+    return !!stats && stats.totalCalls > 0;
+  }
+
   /**
    * Retourne la durée moyenne observée pour un skill (en ms).
    * Si aucun historique n'est disponible, retourne une durée de référence
