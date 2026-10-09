@@ -27,6 +27,7 @@
 import { knowledgeGraph } from "./KnowledgeGraph.js";
 import { projectMemory } from "./ProjectMemory.js";
 import { projectIndexer } from "./ProjectIndexer.js";
+import { isDocumentExtractionEnabled } from "./knowledgeSettings.js";
 import { broadcastKnowledgeProgress } from "../utils/knowledgeBroadcaster.js";
 
 /** Options d'activation. */
@@ -96,23 +97,32 @@ export function activateProjectKnowledge(options: ActivateProjectOptions = {}): 
       projectIndexer.startWatching();
 
       // 4. Extraction automatique des documents du workspace + watcher.
-      import("./WorkspaceIndexer.js")
-        .then(({ workspaceIndexer }) => {
-          workspaceIndexer
-            .extractAll()
-            .then((docStats: any) => {
-              console.log(
-                `[WorkspaceIndexer] ✅ ${docStats.totalExtracted} document(s) extrait(s), ${docStats.totalWords} mots, ${docStats.totalSections} sections (${(docStats.durationMs / 1000).toFixed(1)}s)`
-              );
-              workspaceIndexer.startWatching();
-            })
-            .catch((e: any) => {
-              console.error("[WorkspaceIndexer] ❌ Erreur extraction:", e?.message ?? e);
-            });
-        })
-        .catch((e: any) => {
-          console.error("[WorkspaceIndexer] ❌ Erreur import:", e?.message ?? e);
-        });
+      //    Respecte le réglage utilisateur : si l'extraction documentaire est
+      //    désactivée dans les Settings, on saute entièrement extractAll() ET
+      //    l'armement de son watcher (aucune écriture dans documents.json).
+      if (!isDocumentExtractionEnabled()) {
+        console.log(
+          "[WorkspaceIndexer] ⏭️ Extraction documentaire désactivée dans les paramètres — étape ignorée."
+        );
+      } else {
+        import("./WorkspaceIndexer.js")
+          .then(({ workspaceIndexer }) => {
+            workspaceIndexer
+              .extractAll()
+              .then((docStats: any) => {
+                console.log(
+                  `[WorkspaceIndexer] ✅ ${docStats.totalExtracted} document(s) extrait(s), ${docStats.totalWords} mots, ${docStats.totalSections} sections (${(docStats.durationMs / 1000).toFixed(1)}s)`
+                );
+                workspaceIndexer.startWatching();
+              })
+              .catch((e: any) => {
+                console.error("[WorkspaceIndexer] ❌ Erreur extraction:", e?.message ?? e);
+              });
+          })
+          .catch((e: any) => {
+            console.error("[WorkspaceIndexer] ❌ Erreur import:", e?.message ?? e);
+          });
+      }
     })
     .catch((e: any) => {
       console.error("[KnowledgeGraph] ❌ Erreur indexation:", e?.message ?? e);

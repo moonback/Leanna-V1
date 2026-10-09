@@ -155,6 +155,14 @@ export {
   type ExtractionStats,
 } from "./WorkspaceIndexer.js";
 
+// Réglages globaux du Knowledge System (ex. activation de l'extraction documentaire)
+export {
+  getKnowledgeSettings,
+  isDocumentExtractionEnabled,
+  setDocumentExtractionEnabled,
+  type KnowledgeSettings,
+} from "./knowledgeSettings.js";
+
 
 // Playbooks appris automatiquement (P0) — stratégies réutilisables par classe de problème
 export {

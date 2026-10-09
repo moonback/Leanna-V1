@@ -406,6 +406,43 @@ router.post('/documents/reextract', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/knowledge/document-extraction — État du réglage d'extraction documentaire
+router.get('/document-extraction', async (_req: Request, res: Response) => {
+  try {
+    const { isDocumentExtractionEnabled } = await import('../../knowledge/knowledgeSettings.js');
+    res.json({ status: 'success', enabled: isDocumentExtractionEnabled() });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/knowledge/document-extraction — Active/désactive l'extraction documentaire
+// Body: { enabled: boolean }. Si réactivée, une extraction complète est lancée.
+router.post('/document-extraction', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (typeof req.body?.enabled !== 'boolean') {
+      res.status(400).json({ error: 'Le champ "enabled" (boolean) est requis.' });
+      return;
+    }
+    const { setDocumentExtractionEnabled } = await import('../../knowledge/knowledgeSettings.js');
+    const enabled = setDocumentExtractionEnabled(req.body.enabled);
+
+    // Réactivation → relancer une extraction complète + armer le watcher doc,
+    // pour peupler immédiatement le store sans attendre le prochain démarrage.
+    let reextracted = false;
+    if (enabled && SELF_ROOT) {
+      const { workspaceIndexer } = await import('../../knowledge/WorkspaceIndexer.js');
+      await workspaceIndexer.extractAll();
+      workspaceIndexer.startWatching();
+      reextracted = true;
+    }
+
+    res.json({ status: 'success', enabled, reextracted });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/knowledge/documents/detect-links — Détecte les liens entre documents existants
 router.post('/documents/detect-links', async (req: Request, res: Response) => {
   try {

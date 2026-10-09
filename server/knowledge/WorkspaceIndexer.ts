@@ -21,6 +21,7 @@ import path from "path";
 import { createLogger } from "../utils/logger.js";
 import { SELF_ROOT } from "../utils/selfRoot.js";
 import { getDocumentStore } from "./DocumentStore.js";
+import { isDocumentExtractionEnabled } from "./knowledgeSettings.js";
 import { fileWatcher } from "./FileWatcher.js";
 import type { FileChangeEvent } from "./FileWatcher.js";
 import { broadcastKnowledgeProgress } from "../utils/knowledgeBroadcaster.js";
@@ -156,6 +157,14 @@ export class WorkspaceIndexer {
    */
   async extractAll(): Promise<ExtractionStats> {
     const startTime = Date.now();
+
+    // Respecter le réglage utilisateur (défense en profondeur : même si une
+    // route appelle extractAll() directement, le flag Settings est honoré).
+    if (!isDocumentExtractionEnabled()) {
+      log.info("⏭️ Extraction documentaire désactivée dans les paramètres — ignorée.");
+      return { totalFiles: 0, totalExtracted: 0, totalSections: 0, totalWords: 0, skipped: 0, errors: 0, durationMs: 0 };
+    }
+
     const root = this.getRoot();
 
     if (!root) {
@@ -209,6 +218,7 @@ export class WorkspaceIndexer {
    * Extrait un seul fichier document (appel incrémental).
    */
   async extractFile(relativePath: string): Promise<ExtractedDocument | null> {
+    if (!isDocumentExtractionEnabled()) return null;
     const root = this.getRoot();
     if (!root) return null;
 
