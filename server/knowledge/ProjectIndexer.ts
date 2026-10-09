@@ -26,7 +26,6 @@ import { knowledgeGraph } from "./KnowledgeGraph.js";
 import type { CodeEntity, FileNode } from "./types.js";
 import { extractFileOutline } from "../skills/codebaseHelpers.js";
 import type { OutlineEntry } from "../skills/codebaseHelpers.js";
-import { isSandboxActive, getSandboxRoot } from "../utils/sandbox.js";
 import { fileWatcher } from "./FileWatcher.js";
 import type { FileChangeEvent } from "./FileWatcher.js";
 import { relationExtractor } from "./RelationExtractor.js";
@@ -109,9 +108,13 @@ export class ProjectIndexer {
    * sinon la racine configurée (SELF_ROOT par défaut).
    */
   protected getActiveProjectRoot(): string {
-    if (isSandboxActive()) {
-      return getSandboxRoot();
-    }
+    // L'indexation DOIT cibler la racine réelle du projet (SELF_ROOT), jamais le
+    // sandbox. Le sandbox n'est qu'une zone d'écriture isolée pour l'agent ; il
+    // ne doit pas être une source d'indexation. Indexer le sandbox provoquait :
+    //   • une double indexation (le KnowledgeGraph persiste sous SELF_ROOT, donc
+    //     le scan lisait le sandbox mais comparait/écrivait sur la racine réelle),
+    //   • une seconde vague d'indexation quand le watcher était armé sur le
+    //     sandbox fraîchement recopié (rafale d'évènements fs.watch).
     return this.customProjectRoot || SELF_ROOT;
   }
 

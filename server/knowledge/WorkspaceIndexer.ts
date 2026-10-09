@@ -21,7 +21,6 @@ import path from "path";
 import { createLogger } from "../utils/logger.js";
 import { SELF_ROOT } from "../utils/selfRoot.js";
 import { getDocumentStore } from "./DocumentStore.js";
-import { isSandboxActive, getSandboxRoot } from "../utils/sandbox.js";
 import { fileWatcher } from "./FileWatcher.js";
 import type { FileChangeEvent } from "./FileWatcher.js";
 import { broadcastKnowledgeProgress } from "../utils/knowledgeBroadcaster.js";
@@ -138,9 +137,14 @@ export class WorkspaceIndexer {
 
   /**
    * Retourne la racine du workspace actif.
+   *
+   * On extrait TOUJOURS depuis la racine réelle (SELF_ROOT), jamais le sandbox.
+   * Sinon getDocumentStore(sandboxRoot) persistait les documents dans
+   * `.Leanna/sandbox/.Leanna/documents.json` — un emplacement transitoire effacé
+   * à chaque re-synchronisation du sandbox — alors que la lecture au démarrage
+   * se fait sous `<SELF_ROOT>/.Leanna/documents.json`, d'où leur disparition.
    */
   private getRoot(): string {
-    if (isSandboxActive()) return getSandboxRoot();
     return SELF_ROOT;
   }
 

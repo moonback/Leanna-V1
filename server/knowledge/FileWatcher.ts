@@ -21,7 +21,6 @@ import fs from "fs";
 import path from "path";
 import { createLogger } from "../utils/logger.js";
 import { SELF_ROOT } from "../utils/selfRoot.js";
-import { isSandboxActive, getSandboxRoot } from "../utils/sandbox.js";
 import { shouldWatchPath } from "./indexingRules.js";
 
 const log = createLogger("FileWatcher");
@@ -91,9 +90,14 @@ export class FileWatcher {
 
   // ─── API publique ─────────────────────────────────────────────────────────
 
-  /** Retourne la racine du workspace actif. */
+  /**
+   * Retourne la racine du workspace actif.
+   *
+   * On surveille TOUJOURS la racine réelle (SELF_ROOT), jamais le sandbox :
+   * armer fs.watch récursif sur `.Leanna/sandbox` juste après sa recopie
+   * déclenchait une rafale d'évènements et donc une seconde vague d'indexation.
+   */
   private getRoot(): string {
-    if (isSandboxActive()) return getSandboxRoot();
     return SELF_ROOT;
   }
 

@@ -74,9 +74,12 @@ export class KnowledgeGraph {
 
   constructor() {
     this.state = this.createEmptyState();
-    // Charger immédiatement les données persistées pour éviter un état vide
-    // entre le démarrage du serveur et la fin du premier scanAll().
-    this.load();
+    // NE PAS charger ici : à l'import du module, SELF_ROOT vaut "" (aucun projet
+    // sélectionné). Un load() eager résoudrait getStorePath() contre le cwd et
+    // émettrait une première ligne « Graphe chargé » parasite, PUIS un second
+    // load() lors de activateProjectKnowledge() rechargerait sur la vraie racine
+    // → journaux en double. L'état vide suffit jusqu'à la première activation ;
+    // activateProjectKnowledge() appelle explicitement load() avec la bonne racine.
   }
 
   /**

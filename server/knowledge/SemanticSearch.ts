@@ -27,7 +27,6 @@ import { projectMemory } from "./ProjectMemory.js";
 import fs from "fs";
 import path from "path";
 import { SELF_ROOT } from "../utils/selfRoot.js";
-import { isSandboxActive, getSandboxRoot } from "../utils/sandbox.js";
 import type {
   RelevantFile,
   RelevantSection,
@@ -277,13 +276,13 @@ export class SemanticSearch {
   }
 
   /**
-   * Retourne la racine du workspace ACTIF : sandbox si le mode est activé,
-   * sinon la racine configurée (SELF_ROOT par défaut).
+   * Retourne la racine du workspace ACTIF : toujours la racine réelle du projet
+   * (SELF_ROOT), jamais le sandbox. La recherche sémantique lit le contenu des
+   * fichiers indexés par le KnowledgeGraph, lequel est persisté sous SELF_ROOT ;
+   * lire depuis le sandbox désynchroniserait l'index (clé SELF_ROOT) et le
+   * contenu lu (chemin sandbox).
    */
   getActiveProjectRoot(): string {
-    if (isSandboxActive()) {
-      return getSandboxRoot();
-    }
     return this.customProjectRoot || SELF_ROOT;
   }
 

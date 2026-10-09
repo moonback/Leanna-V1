@@ -92,14 +92,11 @@ export class ProjectMemory {
   private _indexDirty: boolean = true;
 
   constructor() {
-    this.load();
-    // Purger les faits bruyants hérités des anciennes versions
-    this.purgeNoisyFacts();
-    if (this.facts.size > MAX_FACTS) {
-      this.prune("startup");
-    } else {
-      this.gcStaleEntries("startup");
-    }
+    // NE PAS charger ici : à l'import, SELF_ROOT vaut "" (aucun projet actif).
+    // Un load() eager émettrait une première ligne « Mémoire chargée » parasite
+    // (chemin résolu contre le cwd), puis activateProjectKnowledge() rechargerait
+    // sur la vraie racine → journaux en double. La maintenance (purge + prune/gc)
+    // est désormais déclenchée par load() après chaque chargement réel.
   }
 
   /**
@@ -149,6 +146,17 @@ export class ProjectMemory {
     // depuis le disque — éviter le double « Mémoire chargée ».
     const alreadyLoaded = this.syncToCurrentWorkspace();
     if (!alreadyLoaded) this.loadFromDisk();
+
+    // Maintenance post-chargement (déplacée depuis le constructeur pour ne
+    // s'exécuter qu'après un chargement réel avec la bonne racine) :
+    //   • purge des faits bruyants hérités d'anciennes versions,
+    //   • élagage si dépassement du quota, sinon GC des entrées périmées.
+    this.purgeNoisyFacts();
+    if (this.facts.size > MAX_FACTS) {
+      this.prune("startup");
+    } else {
+      this.gcStaleEntries("startup");
+    }
   }
 
   /**
